@@ -121,7 +121,7 @@ MonthMin=1
 DayMin=1
 YearMax=2016
 MonthMax=1
-DayMax=4
+DayMax=31
 CE=dt.timedelta(hours=0,minutes=0,seconds=0)
 
 ConfigPath = RootPath+ConfigPath

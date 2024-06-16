@@ -1,7 +1,9 @@
 import math
 import pandas as pd
+import numpy as np
 import time_module as tm
 import datetime as dt
+from constants_module import *
 
 class Env_Stat:
     def __init__(self):
@@ -591,4 +593,151 @@ def Read_Triple_Sun_Record(Dbug, filename, Model, DateTime, Data, ValidData, Eof
             print("Temperature", Data.Temperature)
             halt()
 
+def GetPressure(ObsDateTime, PData, PressureOption, NumPressurePoints, NumValidPresPoints, DailyMeanPressure, DefaultSurfacePressure):
+    if PressureOption == 0 or NumPressurePoints == 0 or NumValidPresPoints < MinValidPresPoints:
+        GetPressure = DefaultSurfacePressure
+    elif PressureOption == 1 or PressureOption == 3:
+        I = 0
+        TimeDiff1 = ObsDateTime - PData.iloc[I].DateTime
+        I = NumPressurePoints - 1
+        TimeDiff2 = ObsDateTime - PData.iloc[I].DateTime
+        if TimeDiff1.total_seconds() < 0 or TimeDiff2.total_seconds() > 0:
+            GetPressure = DailyMeanPressure
+            print("Observation outside range of pressure tabulation: assuming daily mean")
+            print("First time on file=", PData.iloc[0].DateTime)
+            print("Last time  on file=", PData.iloc[NumPressurePoints - 1].DateTime)
+            print("ObsTime           =", ObsDateTime)
+        else:
+            IPresMatch = 0
+            for I in range(NumPressurePoints):
+                TimeDiff = PData.iloc[I].DateTime - ObsDateTime
+                if TimeDiff.total_seconds() > 0:
+                    IPresMatch = I
+                    break
+            if IPresMatch == 0:
+                print("Failed to match pressure time to obs time")
+                print("ObsDateTime   =", ObsDateTime)
+                print("PDateTime(1)  =", PData.iloc[0].DateTime)
+                print("PDateTime(N)  =", PData.iloc[NumPressurePoints - 1].DateTime)
+
+            GetPressure = PData.iloc[IPresMatch].Pressure
+
+            if GetPressure < 0:
+                GetPressure = DailyMeanPressure
+
+    return GetPressure
+
+def Rayleigh(Dbug, Wavelength, SurfacePressure):
+    DensitySTP = 2.54743e19  # cm-3
+    WMicron = Wavelength / 1000.0
+    WInvSq = 1.0 / WMicron**2
+    if Wavelength > 230.0:
+        RefIndex = 1.0 + 1.0e-8 * (5791817.0 / (238.0185 - WInvSq) + 167909.0 / (57.362 - WInvSq))
+    else:
+        RefIndex = 1.0 + 1.0e-8 * (8060.51 + 2480990.0 / (132.274 - WInvSq) + 17455.7 / (39.32957 - WInvSq))
+
+    NumWavTab = 36
+    WavTab = [200.0, 205.0, 210.0, 215.0, 220.0, 225.0, 230.0, 240.0, 250.0, 260.0,
+              270.0, 280.0, 290.0, 300.0, 310.0, 320.0, 330.0, 340.0, 350.0, 360.0,
+              370.0, 380.0, 390.0, 400.0, 450.0, 500.0, 550.0, 600.0, 650.0, 700.0,
+              750.0, 800.0, 850.0, 900.0, 950.0, 1000.0]
+    DepolTab = [4.545e-2, 4.384e-2, 4.221e-2, 4.113e-2, 4.004e-2, 3.895e-2, 3.785e-2, 3.675e-2,
+                3.565e-2, 3.455e-2, 3.400e-2, 3.289e-2, 3.233e-2, 3.178e-2, 3.178e-2, 3.122e-2,
+                3.066e-2, 3.066e-2, 3.010e-2, 3.010e-2, 3.010e-2, 2.955e-2, 2.955e-2, 2.955e-2,
+                2.899e-2, 2.842e-2, 2.842e-2, 2.786e-2, 2.786e-2, 2.786e-2, 2.786e-2, 2.730e-2,
+                2.730e-2, 2.730e-2, 2.730e-2, 2.730e-2]
+
+    ColumnDensity = AVOGADRO_CONSTANT * SurfacePressure / (MOLECULAR_WEIGHT_DRY_AIR * GRAVITY * 100.0)
+    Depolarization = xlin(NumWavTab, WavTab, DepolTab, Wavelength)
+    KingFactor = (6.0 + 3.0 * Depolarization) / (6.0 - 7.0 * Depolarization)
+    Wcm = Wavelength * 1.0e-7
+    RayleighCsa = 24.0 * math.pi**3 * (RefIndex**2 - 1.0)**2 / (Wcm**4 * DensitySTP**2 * (RefIndex**2 + 2.0)**2) * KingFactor
+    RayleighOD = ColumnDensity * RayleighCsa
+
+    if Dbug:
+        print("Surface Pressure :", SurfacePressure)
+        print("Column density   :", ColumnDensity)
+        print("Wavelength       :", Wavelength)
+        print("Ref Index        :", RefIndex)
+        print("Depolarization   :", Depolarization)
+        print("KingFactor       :", KingFactor)
+        print("RayleighCSA      :", RayleighCsa)
+        print("RayleighOD       :", RayleighOD)
+    
+    return RayleighOD
+
+def xlin(N, X, Y, Z):
+    if X[0] < X[N - 1]:
+        Xmin = X[0]
+        Xmax = X[N - 1]
+        Imin = 0
+        Imax = N - 1
+    else:
+        Xmin = X[N - 1]
+        Xmax = X[0]
+        Imin = N - 1
+        Imax = 0
+
+    if Z <= Xmin:
+        Xlin = Y[Imin]
+    elif Z >= Xmax:
+        Xlin = Y[Imax]
+    else:
+        while abs(Imax - Imin) > 1:
+            I = (Imin + Imax) // 2
+            if Z >= X[I]:
+                Imin = I
+            else:
+                Imax = I
+
+        Xlin = Y[Imin] + (Y[Imax] - Y[Imin]) * (Z - X[Imin]) / (X[Imax] - X[Imin])
+
+    return Xlin
+
+def GetAirMass(Index, ApparentZenith):
+    ScaleHeight = [0.0, 6.58, 1.0, 22.0]
+    EarthRadius = 6370.0
+
+    X = math.cos(ApparentZenith * math.pi / 180)
+    R = ScaleHeight[Index] / EarthRadius
+    D = math.sqrt(X * X + 2 * R + R * R)
+
+    GetAirMass = (1 + R) / D
+
+    return GetAirMass
+
+def CheckTripletCv(Dbug, NumPoints, Nstart, Airmass, CoVar):
+    MinAirmass = 2
+    MaxAirmass = 6
+    MinPtsUnitAirmass = 2
+    MaxCoVar = 1.0
+    Index = np.full(len(Airmass),None)
+    NumOK = 0
+    NumPtsUnitAirmass = [0] * (MaxAirmass + 1)
+
+    for I in range(Nstart, Nstart + NumPoints):
+        #print('am[i] = ',Airmass[I])
+        if MinAirmass <= Airmass[I] <= MaxAirmass and CoVar[I] <= MaxCoVar:
+            NumOK += 1
+            Index[NumOK - 1] = I
+            J = int(Airmass[I])
+            if J > MaxAirmass:
+                print("Array overflow, airmass too big!")
+                print("INT(Airmass)   :", J)
+                print("Max Airmass    :", MaxAirmass)
+                halt()
+            NumPtsUnitAirmass[J] += 1
+
+    SpreadFlag = True
+    for J in range(MinAirmass, MaxAirmass):
+        if NumPtsUnitAirmass[J] < MinPtsUnitAirmass:
+            SpreadFlag = False
+            print("Insufficient points in airmass interval", J)
+
+    if Dbug:
+        print("NumOK    ", NumOK)
+        for J in range(1, 7):
+            print("Points in Airmassrange", J, NumPtsUnitAirmass[J])
+
+    return SpreadFlag,NumOK,Index
 

@@ -1,6 +1,6 @@
 import math
-import datetime
-from math import pi, sin, cos, tan, atan2, sqrt, radians, degrees
+import datetime as dt
+from math import pi, sin, cos, tan, atan, atan2, sqrt, radians, degrees
 
 # Define constants
 LONG_REAL = float
@@ -50,16 +50,34 @@ class SatelliteAxes:
         self.v = v
         self.w = w
 
+#class OrbitalElements(NamedTuple):
+#    mean_anom: float
+#    inc: float
+#    arg_perigee: float
+#    asc_node: float
+#    semi_maj_ax: float
+#    ecc: float
+#    anom_period: float
+#    anom_freq: float
+#    prec_perigee: float
+#    prec_asc_node: float
+#    jul: int
+#    day: float
+#    epoch: float
+
 # Define default orbital elements
 default_elements = OrbitalElements()
 greenwich_elements = OrbitalElements(
     semi_maj_ax=1.0, period=0.997269566340, anom_period=0.997269566340,
-    epoch=(1988, 1, 0, 17, 21, 35, 354)
+    #epoch=(1988, 1, 0, 17, 21, 35, 354)
+    epoch=dt.datetime(1988,1,1,17,21,35,354) #-dt.timedelta(days=1)
 )
 sun_elements = OrbitalElements(
     id_code=1, semi_maj_ax=1.496e11, ecc=0.167133900e-01, mean_anom=0.621622191e+01,
     inc=0.409120047e+00, arg_perigee=0.493460338e+01, period=0.365259635e+03,
-    anom_period=0.365259635e+03, prec_perigee=0.000000822e+00, epoch=(1988, 1, 0, 0, 0, 0, 0)
+    anom_period=0.365259635e+03, prec_perigee=0.000000822e+00, 
+    #epoch=(1988, 1, 0, 0, 0, 0, 0)
+    epoch=dt.datetime(1988,1,1,0,0,0,0) #-dt.timedelta(days=1)
 )
 
 GEO_FACTOR = (GEO_ECC / (1 - GEO_ECC)) * (GEO_ECC / (1 + GEO_ECC))
@@ -135,7 +153,7 @@ def julian(epoch):
     year = epoch.year - epoch_year
     leap_year = year // 4
     leap_check = year - 4 * leap_year
-    j = 365 * year + months[epoch.month] + epoch.day + leap_year + 1
+    j = 365 * year + months[epoch.month-1] + epoch.day + leap_year + 1
     if leap_check == 0 and epoch.month <= 2:
         j -= 1
 
@@ -161,6 +179,7 @@ def kepler(j, d, elem):
     Returns:
     SatelliteAxes: Object containing satellite's position and velocity vectors
     """
+    ERROR_TOL=1e-8
     t = j - elem.jul + d - elem.day
     mean_anom = t * elem.anom_freq + elem.mean_anom
 
@@ -181,7 +200,7 @@ def kepler(j, d, elem):
              elem.semi_maj_ax * sin_ecc * q,
              0.0)
     sat.r = math.sqrt(sum(x ** 2 for x in sat.u))
-    sat.u = (x / sat.r for x in sat.u)
+    sat.u = tuple(x / sat.r for x in sat.u)
 
     # Calculate the vector V in the plane of T and U, orthogonal to U
     sat.v = (-sat.u[1], sat.u[0], 0.0)
@@ -190,11 +209,15 @@ def kepler(j, d, elem):
     sat.w = (0.0, 0.0, 1.0)
 
     # Calculate the velocity vector
+    #print(elem.anom_freq)
     x = elem.anom_freq / (1 - elem.ecc * cos_ecc)
     x *= elem.semi_maj_ax
+    #print(x)
     sat.t = (-x * sin_ecc, x * cos_ecc * q, 0.0)
+    #print(cos_ecc)
+    #print(sat.t)
     sat.s = math.sqrt(sum(x ** 2 for x in sat.t))
-    sat.t = (x / sat.s for x in sat.t)
+    sat.t = tuple(x / sat.s for x in sat.t)
 
     # Rotate the axes
     perigee = elem.arg_perigee + t * elem.prec_perigee
@@ -370,38 +393,6 @@ def solar_position(j, d, new_station, station_lat, station_lon):
 
     return sun_zenith, sun_azimuth, local_sun
 
-import math
-from typing import NamedTuple
-
-PI = math.pi
-TWO_PI = 2 * PI
-RADIANS_PER_DEGREE = PI / 180.0
-SECONDS_PER_DAY = 86400.0
-GEO_RADIUS = 6378137.0
-GEO_ECC = 0.08181919
-GEO_SEMIMAJAX = 6378137.0
-J_2 = 1082.28e-6
-GEO_GRAV = 3.986005e14
-
-class OrbitalElements(NamedTuple):
-    mean_anom: float
-    inc: float
-    arg_perigee: float
-    asc_node: float
-    semi_maj_ax: float
-    ecc: float
-    anom_period: float
-    anom_freq: float
-    prec_perigee: float
-    prec_asc_node: float
-    jul: int
-    day: float
-    epoch: float
-
-class SatelliteAxes(NamedTuple):
-    r: float
-    u: tuple[float, float, float]
-
 def satellite_position(j, d, new_station, station_lat, station_lon, sat_elements):
     if new_station:
         new_station = False
@@ -457,7 +448,7 @@ def satellite_position(j, d, new_station, station_lat, station_lon, sat_elements
     if sum(e * s for e, s in zip(east, sat_bearing)) < 0:
         sat_azimuth = TWO_PI - sat_azimuth
 
-    return sat_zenith, sat_azimuth, local_sat
+    return sat_zenith, sat_azimuth, new_station
 
 def element_unit_conversion(elem):
     elem.mean_anom *= RADIANS_PER_DEGREE

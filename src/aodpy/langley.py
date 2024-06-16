@@ -1,3 +1,4 @@
+import math
 import datetime as dt
 from cimel_module import *
 from constants_module import *
@@ -5,6 +6,8 @@ import os
 import time_module as tm
 import navigation_module as nav
 import solpos_module as sol
+import statistics_module as st
+import numpy as np
 
 MaxLangleys = 2048
 MaxPolyOrder = 8
@@ -160,57 +163,97 @@ DailyMeanPressure = None
 DefaultOzone = None
 OzoneColumn = None
 
-TimeDay = [[None] * 3 for _ in range(MaxTriplets)]
-SolarZenithDeg = [[None] * 3 for _ in range(MaxTriplets)]
-SolarZenithApp = [[None] * 3 for _ in range(MaxTriplets)]
-SolarAzimuthDeg = [[None] * 3 for _ in range(MaxTriplets)]
+#TimeDay = [[None] * 3 for _ in range(MaxTriplets)]
+#SolarZenithDeg = [[None] * 3 for _ in range(MaxTriplets)]
+#SolarZenithApp = [[None] * 3 for _ in range(MaxTriplets)]
+#SolarAzimuthDeg = [[None] * 3 for _ in range(MaxTriplets)]
+#
+#Temperature = [None] * MaxTriplets
+#Pressure = [None] * MaxTriplets
+#DSunEarth = [None] * MaxTriplets
+#MeanDetectorTemp = [None] * 2
+#PresMean = [None] * 2
+#
+#AirMassODRayleigh = [[[None] * NumChannels for _ in range(3)] for _ in range(MaxTriplets)]
+#AirMassODAerosol = [[[None] * NumChannels for _ in range(3)] for _ in range(MaxTriplets)]
+#AirMassODOzone = [[[None] * NumChannels for _ in range(3)] for _ in range(MaxTriplets)]
+#AirMass = [[[None] * NumChannels for _ in range(3)] for _ in range(MaxTriplets)]
+#Signal = [[[None] * NumChannels for _ in range(3)] for _ in range(MaxTriplets)]
+#LnSignal = [[[None] * NumChannels for _ in range(3)] for _ in range(MaxTriplets)]
+#
+#Triplet = [None] * 3
+#
+#TripletMean = [[None] * NumChannels for _ in range(MaxTriplets)]
+#TripletSdev = [[None] * NumChannels for _ in range(MaxTriplets)]
+#TripletCv = [[None] * NumChannels for _ in range(MaxTriplets)]
+#TripletLog = [[None] * NumChannels for _ in range(MaxTriplets)]
+#
+#BlackSun = [None] * NumChannels
+#BlackSkyA = [None] * NumSkyA
+#BlackSkyK = [None] * NumSkyK
+#
+#RayleighOD = [None] * NumChannels
+#OzoneOD = [None] * NumChannels
+#AerosolOD = [[None] * NumChannels for _ in range(2)]
+#
+#LnV0Glob = [[None] * NumChannels for _ in range(MaxLangleys)]
+#AodGlob = [[None] * NumChannels for _ in range(MaxLangleys)]
+#
+#LnV0Mean = [None] * NumChannels
+#LnV0Sdev = [None] * NumChannels
+#AodMean = [None] * NumChannels
+#AodSdev = [None] * NumChannels
+#
+#DaysSinceEpoch = [None] * MaxLangleys
+#Weight = [None] * MaxLangleys
+#
+#Residual = [None] * NumChannels
+#Erms = [None] * NumChannels
+#
+#LnV0Coef = [[None] * NumChannels for _ in range(MaxPolyOrder + 1)]
+#ElnV0Coef = [[None] * NumChannels for _ in range(MaxPolyOrder + 1)]
+#
+#Angstrom = [[[None] * NumChannels for _ in range(NumChannels)] for _ in range(2)]
+import numpy as np
 
-Temperature = [None] * MaxTriplets
-Pressure = [None] * MaxTriplets
-DSunEarth = [None] * MaxTriplets
-MeanDetectorTemp = [None] * 2
-PresMean = [None] * 2
-
-AirMassODRayleigh = [[[None] * NumChannels for _ in range(3)] for _ in range(MaxTriplets)]
-AirMassODAerosol = [[[None] * NumChannels for _ in range(3)] for _ in range(MaxTriplets)]
-AirMassODOzone = [[[None] * NumChannels for _ in range(3)] for _ in range(MaxTriplets)]
-AirMass = [[[None] * NumChannels for _ in range(3)] for _ in range(MaxTriplets)]
-Signal = [[[None] * NumChannels for _ in range(3)] for _ in range(MaxTriplets)]
-LnSignal = [[[None] * NumChannels for _ in range(3)] for _ in range(MaxTriplets)]
-
-Triplet = [None] * 3
-
-TripletMean = [[None] * NumChannels for _ in range(MaxTriplets)]
-TripletSdev = [[None] * NumChannels for _ in range(MaxTriplets)]
-TripletCv = [[None] * NumChannels for _ in range(MaxTriplets)]
-TripletLog = [[None] * NumChannels for _ in range(MaxTriplets)]
-
-BlackSun = [None] * NumChannels
-BlackSkyA = [None] * NumSkyA
-BlackSkyK = [None] * NumSkyK
-
-RayleighOD = [None] * NumChannels
-OzoneOD = [None] * NumChannels
-AerosolOD = [[None] * NumChannels for _ in range(2)]
-
-LnV0Glob = [[None] * NumChannels for _ in range(MaxLangleys)]
-AodGlob = [[None] * NumChannels for _ in range(MaxLangleys)]
-
-LnV0Mean = [None] * NumChannels
-LnV0Sdev = [None] * NumChannels
-AodMean = [None] * NumChannels
-AodSdev = [None] * NumChannels
-
-DaysSinceEpoch = [None] * MaxLangleys
-Weight = [None] * MaxLangleys
-
-Residual = [None] * NumChannels
-Erms = [None] * NumChannels
-
-LnV0Coef = [[None] * NumChannels for _ in range(MaxPolyOrder + 1)]
-ElnV0Coef = [[None] * NumChannels for _ in range(MaxPolyOrder + 1)]
-
-Angstrom = [[[None] * NumChannels for _ in range(NumChannels)] for _ in range(2)]
+SolarZenithDeg = np.full((MaxTriplets, 3), None)
+SolarZenithApp = np.full((MaxTriplets, 3), None)
+SolarAzimuthDeg = np.full((MaxTriplets, 3), None)
+Temperature = np.full(MaxTriplets, None)
+Pressure = np.full(MaxTriplets, None)
+DSunEarth = np.full(MaxTriplets, None)
+MeanDetectorTemp = np.full(2, None)
+PresMean = np.full(2, None)
+AirMassODRayleigh = np.full((MaxTriplets, 3, NumChannels), None)
+AirMassODAerosol = np.full((MaxTriplets, 3, NumChannels), None)
+AirMassODOzone = np.full((MaxTriplets, 3, NumChannels), None)
+AirMass = np.full((MaxTriplets, 3, NumChannels), None)
+Signal = np.full((MaxTriplets, 3, NumChannels), None)
+LnSignal = np.full((MaxTriplets, 3, NumChannels), None)
+Triplet = np.full(3, None)
+TripletMean = np.full((MaxTriplets, NumChannels), None)
+TripletSdev = np.full((MaxTriplets, NumChannels), None)
+TripletCv = np.full((MaxTriplets, NumChannels), None)
+TripletLog = np.full((MaxTriplets, NumChannels), None)
+BlackSun = np.full(NumChannels, None)
+BlackSkyA = np.full(NumSkyA, None)
+BlackSkyK = np.full(NumSkyK, None)
+RayleighOD = np.full(NumChannels, None)
+OzoneOD = np.full(NumChannels, None)
+AerosolOD = np.full((2, NumChannels), None)
+LnV0Glob = np.full((MaxLangleys, NumChannels), None)
+AodGlob = np.full((MaxLangleys, NumChannels), None)
+LnV0Mean = np.full(NumChannels, None)
+LnV0Sdev = np.full(NumChannels, None)
+AodMean = np.full(NumChannels, None)
+AodSdev = np.full(NumChannels, None)
+DaysSinceEpoch = np.full(MaxLangleys, None)
+Weight = np.full(MaxLangleys, None)
+Residual = np.full(NumChannels, None)
+Erms = np.full(NumChannels, None)
+LnV0Coef = np.full((MaxPolyOrder + 1, NumChannels), None)
+ElnV0Coef = np.full((MaxPolyOrder + 1, NumChannels), None)
+Angstrom = np.full((2, NumChannels, NumChannels), None)
 
 FileOK = False
 There = False
@@ -252,7 +295,7 @@ CurrentMonth = None
 Ozone = [None] * 32
 
 Slash = '/'
-#Nav_Setup()
+nav.nav_setup()
 CurrentDateTime = dt.datetime.now(dt.timezone.utc).astimezone()
 #CurrentDateTime.utcoffset() #gives timedelta in seconds
 CurrentDate, CurrentTime, TimeZone = CurrentDateTime.strftime('%Y%m%d,%H%M%S,%:z').split(',')
@@ -294,7 +337,7 @@ ConfigFile = ConfigPath+'/'+SiteCode+'.cfn'
 print(' Config File=', ConfigFile)
 ObsDate = dt.date(YearMin, MonthMin, DayMin)
 Config = Read_Site_Configuration(Dbug[0], ConfigFile, ObsDate)
-print(Config)
+#print(Config)
 Instrument = Config.CimelNumber
 Model = Config.CimelModel
 StationLatDeg = Config.attrs['Latitude']
@@ -372,19 +415,17 @@ print(f'Langley tab File Name={LtbFile}')
 CalFile = ResultPath + FileRoot + '.lcl'
 print(f'Cal File Name={CalFile}')
 #
-#CutFile = Make_File_Name(ResultPath, FileRoot, 'cut', CutFile)
-#print(f'Cut File Name={CutFile}')
-#
-#Next_Unit_Number(CutUnit)
-#There, MaxRecLength = os.path.isfile(CutFile), os.path.getsize(CutFile)
-#
-#if There:
-#    open(CutUnit, CutFile, 'r')
-#    NumCut, CutList = Read_Cut_Periods(True, CutUnit, NumCut, CutList)
-#    print(f'Num periods cut={NumCut}')
-#else:
-#    print('No valid .cut file found')
-#    NumCut = 0
+CutFile = ResultPath + FileRoot + '.cut'
+print(f'Cut File Name={CutFile}')
+
+There = os.path.isfile(CutFile)
+if There:
+    open(CutUnit, CutFile, 'r')
+    NumCut, CutList = Read_Cut_Periods(True, CutUnit, NumCut, CutList)
+    print(f'Num periods cut={NumCut}')
+else:
+    print('No valid .cut file found')
+    NumCut = 0
 #
 #if ApplyClockFix:
 #    ClockFile = Make_File_Name(ResultPath, FileRoot, 'clk', ClockFile)
@@ -475,12 +516,13 @@ for Year in range(YearMin, YearMax+1):
                     #INQUIRE(FILE=PresFile, EXIST=FileOK)
                     if FileOK:
                         #Read_Pressure_File(Dbug(0), PresFile, NumPressurePoints, NumValidPresPoints, PData, DailyMeanPressure)
-                        PresColumnNames=['DateTime','P_UnTCorrect','Tmean','DelP','Pmean']
-                        p = pd.read_csv(PresFile, skiprows=9, header=None, delimiter=r'\s+', names=PresColumnNames)
+                        PresColumnNames=['Date','Time','P_UnTCorrect','Tmean','DelP','Pressure']
+                        p = pd.read_csv(PresFile, skiprows=9, header=None, delimiter=r'\s+', names=PresColumnNames, index_col=False, parse_dates=[[0,1]]) #depreciated
+                        p.rename(columns={'Date_Time':'DateTime'}, inplace=True)
                         print(p)
                         NumPressurePoints = len(p.index)
-                        NumValidPresPoints = sum(p.Pmean>0)
-                        DailyMeanPressure = sum(p.Pmean[p.Pmean>0])/NumValidPresPoints
+                        NumValidPresPoints = sum(p.Pressure>0)
+                        DailyMeanPressure = sum(p.Pressure[p.Pressure>0])/NumValidPresPoints
                         if NumValidPresPoints <= MinValidPresPoints:
                             print('Insufficient valid pressure data in file')
                     else:
@@ -541,9 +583,10 @@ for Year in range(YearMin, YearMax+1):
                         #    HALT()
                         #CLOSE(UNIT=BlkUnit)
                         #else:
-                        #    BlackSun[1:NumChannels] = 0
-                        #    BlackSkyA[1:NumSkyA] = 0
-                        #    BlackSkyK[1:NumSkyK] = 0
+            BlackSun = [0 for _ in BlackSun]
+            #BlackSkyA[:NumSkyA] = 0
+            #BlackSkyK[:NumSkyK] = 0
+
             Irec = 0
             Eof = 0
             NumSunTriples = [0, 0, 0]  # Counter for sun triple
@@ -554,7 +597,6 @@ for Year in range(YearMin, YearMax+1):
             if DataType == 'sun':
                 #Read_Triple_Sun_Record(Dbug(1), InUnit, Model, DateTime, Sun3Data, ValidData, Eof)
                 Sun3Data = read_triple_sun_record(InFile,Model)
-                print(Sun3Data.iloc[0])
             #elif DataType == 'lsu':
             #    Read_Single_Sun_Record(Dbug(1), InUnit, Model, DateTime, SunData, ValidData, Eof)
             #    SunData = SunData
@@ -574,9 +616,29 @@ for Year in range(YearMin, YearMax+1):
             StartLocalDay = dt.datetime(Sun3Data.iloc[0].Date.year, Sun3Data.iloc[0].Date.month, Sun3Data.iloc[0].Date.day, 4, 0, 0) + TimeZone_DT
             EndLocalDay = dt.datetime(Sun3Data.iloc[0].Date.year, Sun3Data.iloc[0].Date.month, Sun3Data.iloc[0].Date.day, 21, 0, 0) + TimeZone_DT
 
-            for K,row in Sun3Data.iterrows():
+            
+            
+            SolarZenithDeg = np.full((MaxTriplets, 3), None)
+            SolarZenithApp = np.full((MaxTriplets, 3), None)
+            SolarAzimuthDeg = np.full((MaxTriplets, 3), None)
+            Temperature = np.full(MaxTriplets, None)
+            Pressure = np.full(MaxTriplets, None)
+            DSunEarth = np.full(MaxTriplets, None)
+            AirMassODRayleigh = np.full((MaxTriplets, 3, NumChannels), None)
+            AirMassODAerosol = np.full((MaxTriplets, 3, NumChannels), None)
+            AirMassODOzone = np.full((MaxTriplets, 3, NumChannels), None)
+            AirMass = np.full((MaxTriplets, 3, NumChannels), None)
+            Signal = np.full((MaxTriplets, 3, NumChannels), None)
+            LnSignal = np.full((MaxTriplets, 3, NumChannels), None)
+            TripletMean = np.full((MaxTriplets, NumChannels), None)
+            TripletSdev = np.full((MaxTriplets, NumChannels), None)
+            TripletCv = np.full((MaxTriplets, NumChannels), None)
+            TripletLog = np.full((MaxTriplets, NumChannels), None)
+            
+            
+            for rowindex,row in Sun3Data.iterrows():
                 DateTime = dt.datetime.combine(row.Date,row.Time)
-                print(DateTime)
+                #print(DateTime)
                 if (DateTime > StartLocalDay) or (DateTime < EndLocalDay):
             #    while (DateTime < StartLocalDay or DateTime > EndLocalDay) and Eof == 0:
             #        print('Time outside local day, skipping')
@@ -606,11 +668,16 @@ for Year in range(YearMin, YearMax+1):
                 #        if ApplyClockFix:
                 #            Add_Time(YMDHMS[:, 1], -TimeCorr)
                 #            WRITE(FixTimeCheckUnit, 26) DateTime, TimeCorr, YMDHMS[1:6, 1]
-                #        K += 1
-                #        NumSunTriples[0] = K
-                         JulDay[1], TimeDay[K, 1] = nav.julian(DateTime,)
-                         #sol.solar_position_almanac(JulDay[1], TimeDay[K, 1], SunPos)
-            #        DSunEarth[K] = SunPos.DsunEarth
+                         
+                         NumSunTriples[0] = K+1
+                         #print(DateTime)
+                         DateTimeI=DateTime
+                         JulDay, TimeDay = nav.julian(DateTimeI)
+                         SunPos = sol.solar_position_almanac(JulDay, TimeDay)
+                         #print('JD = {0}, TimeDay = {1}'.format(JulDay,TimeDay))
+                         #print('geossun = {}, dsunearth = {}, rA = {}, Dec = {}, EqnTime = {}'.format(SunPos.GeoSun,SunPos.DSunEarth,SunPos.RightAscension,
+                         #    SunPos.Declination, SunPos.EqnTime))
+                         DSunEarth = SunPos.DSunEarth
             #        if Dbug(1):
             #            print('Year             :', YMDHMS[1, 1])
             #            print('Month            :', YMDHMS[2, 1])
@@ -622,111 +689,127 @@ for Year in range(YearMin, YearMax+1):
             #            print('TimeDay          :', TimeDay[K, 1])
             #            print('DSunEarth        :', DSunEarth[K])
             #            HALT()
-            #        I = 1
-            #        NewStation = True
-            #        Satellite_Position(JulDay[I], TimeDay[K, I], NewStation, StationLatRad, StationLonRad, SunElements, SolarZenith, SolarAzimuth)
-            #        SolarZenithDeg[K, I] = SolarZenith * DegreesPerRadian
-            #        SolarZenithApp[K, I] = Apparent_Zenith(SolarZenithDeg[K, I])
-            #        SolarAzimuthDeg[K, I] = SolarAzimuth * DegreesPerRadian
-            #        if Dbug(1):
-            #            print('Latitude      :', StationLatDeg)
-            #            print('Longitude     :', StationLonDeg)
-            #            print('Sol Zen (true):', SolarZenithDeg[K, I])
-            #            print('Sol Zen (app) :', SolarZenithApp[K, I])
-            #            print('Solar Azimuth :', SolarAzimuthDeg[K, I])
+                         I = 0
+                         NewStation = True
+                         SolarZenith, SolarAzimuth, NewStation = nav.satellite_position(JulDay, TimeDay, NewStation, StationLatRad, StationLonRad, nav.sun_elements)
+                         SolarZenithDeg[K,I] = SolarZenith * DegreesPerRadian
+                         SolarZenithApp[K,I] = sol.apparent_zenith(SolarZenithDeg[K,I])
+                         SolarAzimuthDeg[K,I] = SolarAzimuth * DegreesPerRadian
+                    #if Dbug[1]:
+                    #     print('Latitude      :', StationLatDeg)
+                    #     print('Longitude     :', StationLonDeg)
+                    #     print('Sol Zen (true):', SolarZenithDeg[K,I])
+                         #print('Sol Zen (app) :', SolarZenithApp[K,I])
+                         #print('Solar Azimuth :', SolarAzimuthDeg[K,I])
+                         
             #            HALT()
-            #        for I in range(2, 4):
-            #            YMDHMS[:, I] = YMDHMS[:, I - 1]
-            #            Add_Time(YMDHMS[1, I], 30)
-            #            Julian(YMDHMS[1:7, I], JulDay[I], TimeDay[K, I])
-            #            if Dbug(1):
+                    for I in range(1, 3):
+                        #YMDHMS[:, I] = YMDHMS[:, I - 1]
+                        #Add_Time(YMDHMS[1, I], 30)
+                        DateTimeI = DateTimeI + dt.timedelta(seconds=30)
+                        JulDay, TimeDay = nav.julian(DateTimeI)
+                        SunPos = sol.solar_position_almanac(JulDay, TimeDay)
+                                    #            if Dbug(1):
             #                print('Day                 :', DateTime.Day)
             #                print('Month               :', DateTime.Month)
             #                print('Year                :', DateTime.Year)
             #                print('Julian Day number   :', JulDay[I])
-            #                print('Fractional Day      :', TimeDay[K, I])
+            #                print('Fractional Day      :', TimeDay[K,I])
             #                HALT()
-            #            NewStation = True
-            #            Satellite_Position(JulDay[I], TimeDay[K, I], NewStation, StationLatRad, StationLonRad, SunElements, SolarZenith, SolarAzimuth)
-            #            SolarZenithDeg[K, I] = SolarZenith * DegreesPerRadian
-            #SolarZenithApp[K, I] = Apparent_Zenith(SolarZenithDeg[K, I])
-            #SolarAzimuthDeg[K, I] = SolarAzimuth * DegreesPerRadian
+                        NewStation = True
+                        SolarZenith, SolarAzimuth, NewStation = nav.satellite_position(JulDay, TimeDay, NewStation, StationLatRad, StationLonRad, nav.sun_elements)
+                        SolarZenithDeg[K,I] = SolarZenith * DegreesPerRadian
+                        SolarZenithApp[K,I] = sol.apparent_zenith(SolarZenithDeg[K,I])
+                        SolarAzimuthDeg[K,I] = SolarAzimuth * DegreesPerRadian
+                        #Satellite_Position(JulDay[I], TimeDay[K,I], NewStation, StationLatRad, StationLonRad, SunElements, SolarZenith, SolarAzimuth)
+                        #SolarZenithDeg[K,I] = SolarZenith * DegreesPerRadian
+                        #SolarZenithApp[K,I] = Apparent_Zenith(SolarZenithDeg[K,I])
+                        #SolarAzimuthDeg[K,I] = SolarAzimuth * DegreesPerRadian
             #if Dbug(1):
             #    print('Latitude      :', StationLatDeg)
             #    print('Longitude     :', StationLonDeg)
-            #    print('Sol Zen (true):', SolarZenithDeg[K, I])
-            #    print('Sol Zen (app) :', SolarZenithApp[K, I])
-            #    print('Solar Azimuth :', SolarAzimuthDeg[K, I])
+            #    print('Sol Zen (true):', SolarZenithDeg[K,I])
+                        #print('Sol Zen (app) :', SolarZenithApp[K,I])
+                        #print('Solar Azimuth :', SolarAzimuthDeg[K,I])
             #    HALT()
-            #if SolarAzimuthDeg[K, 2] < 180.0:
-            #    NumSunTriples[1] += 1  # Morning
-            #    NumSunSingles[1] += 3  # Morning
-            #else:
-            #    NumSunTriples[2] += 1  # Afternoon
-            #    NumSunSingles[2] += 3  # Afternoon
-            #Pressure[K] = GetPressure(DateTime, PData, PressureOption, NumPressurePoints, NumValidPresPoints, DailyMeanPressure, DefaultSurfacePressure)
-            #for N in range(1, NumChannels+1):
-            #    Rayleigh(Dbug(2), Wavelength[N, Model], Pressure[K], RayleighOD[N])
-            #    if DBUG(2):
-            #        print('Wavelength:', Wavelength[N, Model])
-            #        print('Pressure  :', Pressure[K])
-            #        print('RayleighOD:', RayleighOD[N])
-            #for N in range(1, NumChannels+1):
-            #    for I in range(1, 4):
-            #        AirMassODRayleigh[K, I, N] = GetAirMass(1, SolarZenithApp[K, I]) * RayleighOD[N]
-            #        AirMassODAerosol[K, I, N] = GetAirMass(2, SolarZenithApp[K, I]) * 0.03
-            #        AirMassODOzone[K, I, N] = GetAirMass(3, SolarZenithApp[K, I]) * OzoneOD[N]
-            #        AirMass[K, I, N] = (AirMassODRayleigh[K, I, N] + AirMassODAerosol[K, I, N] + AirMassODOzone[K, I, N]) / (RayleighOD[N] + 0.03 + OzoneOD[N])
-            #        if Dbug(2):
-            #            print('Time          :', YMDHMS[1:6, I])
-            #            print('Sol Zen (true):', SolarZenithDeg[K, I])
-            #            print('Sol Zen (app) :', SolarZenithApp[K, I])
-            #            print('Rayleigh am   :', GetAirMass(1, SolarZenithApp[K, I]))
-            #            print('Aerosol  am   :', GetAirMass(2, SolarZenithApp[K, I]))
-            #            print('Ozone    am   :', GetAirMass(3, SolarZenithApp[K, I]))
-            #            print('Weighted am   :', AirMass[K, I, N])
-            #            HALT()
-            #for N in range(1, NumChannels+1):
-            #    Triplet = [REAL(Sun3Data.Signal[1].Chan[N] - BlackSun[N]), REAL(Sun3Data.Signal[2].Chan[N] - BlackSun[N]), REAL(Sun3Data.Signal[3].Chan[N] - BlackSun[N])]
-            #    Stat(Triplet, 3, TripletMean[K, N], TripletSdev[K, N])
-            #    if TripletSdev[K, N] >= 1000.0:
-            #        TripletSdev[K, N] = 999.99
-            #    if TripletMean[K, N] > 0.0:
-            #        TripletCv[K, N] = 100 * TripletSdev[K, N] / TripletMean[K, N]
-            #    else:
-            #        TripletCv[K, N] = 99.99
-            #    if TripletCv[K, N] >= 99.99:
-            #        TripletCv[K, N] = 99.99
-            #    if TripletMean[K, N] > 0.0:
-            #        TripletLog[K, N] = LOG(TripletMean[K, N])
-            #    else:
-            #        TripletLog[K, N] = -9.99
-            #    if Dbug(1):
-            #        print('In Channel loop, Cha #=', N)
-            #        print('Triplet(1)=', Triplet[1])
-            #        print('TripletMean=', TripletMean[K, N])
-            #        print('TripletSdev=', TripletSdev[K, N])
-            #        HALT()
-            #for I in range(1, 4):
-            #    L += 1
-            #    if L > MaxTriplets:
-            #        print('Array bounds exceeded')
-            #        print('Increase MaxTriplets!')
-            #        HALT()
-            #    NumSunSingles[0] = L
-            #    for N in range(1, NumChannels+1):
-            #        Signal[K, I, N] = REAL(Sun3Data.Signal[I].Chan[N] - BlackSun[N])
-            #        if Signal[K, I, N] > 0.0:
-            #            LnSignal[K, I, N] = LOG(Signal[K, I, N])
-            #        else:
-            #            LnSignal[K, I, N] = -9.99
-            #Temperature[K] = Sun3Data.Temperature
+                    if SolarAzimuthDeg[K][2] < 180.0:
+                        NumSunTriples[1] += 1  # Morning
+                        NumSunSingles[1] += 3  # Morning
+                    else:
+                        NumSunTriples[2] += 1  # Afternoon
+                        NumSunSingles[2] += 3  # Afternoon
+                    
+                    Pressure[K] = GetPressure(DateTime, p, PressureOption, NumPressurePoints, NumValidPresPoints, DailyMeanPressure, DefaultSurfacePressure)
+                    
+                    for N in range(NumChannels):
+                        RayleighOD[N] = Rayleigh(Dbug[2], Wavelength[Model-1][N], Pressure[K])
+                        #if Dbug[2]:
+                        #print('Wavelength:', Wavelength[Model-1][N])
+                        #print('Pressure  :', Pressure[K])
+                        #print('RayleighOD:', RayleighOD[N])
+                    for N in range(NumChannels):
+                        for I in range(3):
+                            AirMassODRayleigh[K,I,N] = GetAirMass(1, SolarZenithApp[K,I]) * RayleighOD[N]
+                            AirMassODAerosol[K,I,N] = GetAirMass(2, SolarZenithApp[K,I]) * 0.03
+                            AirMassODOzone[K,I,N] = GetAirMass(3, SolarZenithApp[K,I]) * OzoneOD[N]
+                            AirMass[K,I,N] = (AirMassODRayleigh[K,I,N] + AirMassODAerosol[K,I,N] + AirMassODOzone[K,I,N]) / (RayleighOD[N] + 0.03 + OzoneOD[N])
+                            if Dbug[2]:
+                                #print('Time          :', YMDHMS[1:6, I])
+                                print('Sol Zen (true):', SolarZenithDeg[K,I])
+                                print('Sol Zen (app) :', SolarZenithApp[K,I])
+                                print('Rayleigh am   :', GetAirMass(1, SolarZenithApp[K,I]))
+                                print('Aerosol  am   :', GetAirMass(2, SolarZenithApp[K,I]))
+                                print('Ozone    am   :', GetAirMass(3, SolarZenithApp[K,I]))
+                                print('Weighted am   :', AirMass[K,I,N])
+                            
+                    for N in range(NumChannels):
+                        #print(Sun3Data.iloc[K]['Ch'+str(N+1)][0])
+                        Triplet = [(Sun3Data.iloc[K]['Ch'+str(N+1)][0] - BlackSun[N]), (Sun3Data.iloc[K]['Ch'+str(N+1)][1] - BlackSun[N]), (Sun3Data.iloc[K]['Ch'+str(N+1)][2] - BlackSun[N])]
+                        TripletMean[K,N], TripletSdev[K,N], tripmin, tripmax = st.stat(Triplet)
+                        if TripletSdev[K,N] >= 1000.0:
+                            TripletSdev[K,N] = 999.99
+                        if TripletMean[K,N] > 0.0:
+                            TripletCv[K,N] = 100 * TripletSdev[K,N] / TripletMean[K,N]
+                        else:
+                            TripletCv[K,N] = 99.99
+                        if TripletCv[K,N] >= 99.99:
+                            TripletCv[K,N] = 99.99
+                        if TripletMean[K,N] > 0.0:
+                            TripletLog[K,N] = math.log(TripletMean[K,N])
+                        else:
+                            TripletLog[K,N] = -9.99
+                        #if Dbug[1]:
+                        #print('In Channel loop, Cha #=', N)
+                        #print('Triplet(1)=', Triplet[1])
+                        #print('TripletMean=', TripletMean[K,N])
+                        #print('TripletSdev=', TripletSdev[K,N])
+                    for I in range(3):
+                        L += 1
+                        if L > MaxTriplets:
+                            print('Array bounds exceeded')
+                            print('Increase MaxTriplets!')
+                        NumSunSingles[0] = L
+                        for N in range(NumChannels):
+                            Signal[K,I,N] = Sun3Data.iloc[K]['Ch'+str(N+1)][I] - BlackSun[N]
+                            if Signal[K,I,N] > 0.0:
+                                LnSignal[K,I,N] = math.log(Signal[K,I,N])
+                            else:
+                                LnSignal[K,I,N] = -9.99
+                    Temperature[K] = Sun3Data.iloc[K].Temperature
+                    K += 1
+
+            # End of K loop
+            Temperature = Temperature[0:K]
+            AirMass = AirMass[0:K,:,:]
+            Pressure = Pressure[0:K]
+
             #if MakeTab:
             #    WRITE(OutUnit, 6) (YMDHMS[J, 2], J=1, 6), Pressure[K], SolarZenithApp[K, 2], AirMass[K, 2, I870], (TripletMean[K, J], TripletSdev[K, J], TripletCv[K, J], TripletLog[K, J], J=1, NumLangleyChannels(Model)), (TripletMean[K, J], TripletSdev[K, J], TripletCv[K, J], TripletLog[K, J], J=IWV, IWV)
             #    if Dbug(1):
             #        WRITE(*          , 6) (YMDHMS[J, 2], J=1, 6), SolarZenithApp[K, 2], AirMass[K, 2, I870], (TripletMean[K, J], TripletSdev[K, J], TripletCv[K, J], TripletLog[K, J], J=1, 1)
             #    for I in range(1, 4):
-            #        WRITE(LangleyUnit, 8) (YMDHMS[J, I], J=1, 6), Pressure[K], SolarZenithApp[K, I], AirMass[K, I, I870], (Signal[K, I, J], J=1, NumLangleyChannels(Model)), (Signal[K, I, J], J=IWV, IWV)
+            #        WRITE(LangleyUnit, 8) (YMDHMS[J, I], J=1, 6), Pressure[K], SolarZenithApp[K,I], AirMass[K, I, I870], (Signal[K, I, J], J=1, NumLangleyChannels(Model)), (Signal[K, I, J], J=IWV, IWV)
+
             #elif DataType == 'alm':
             #    K += 1  # Index of this almucantar measurement
             #    DateTime = AlmData[4].DateTime  # Time at start of first scan
@@ -756,16 +839,16 @@ for Year in range(YearMin, YearMax+1):
             #    HALT()
             #I = 1
             #NewStation = True
-            #Satellite_Position(JulDay[I], TimeDay[K, I], NewStation, StationLatRad, StationLonRad, SunElements, SolarZenith, SolarAzimuth)
-            #SolarZenithDeg[K, I] = SolarZenith * DegreesPerRadian
-            #SolarZenithApp[K, I] = Apparent_Zenith(SolarZenithDeg[K, I])
-            #SolarAzimuthDeg[K, I] = SolarAzimuth * DegreesPerRadian
+            #Satellite_Position(JulDay[I], TimeDay[K,I], NewStation, StationLatRad, StationLonRad, SunElements, SolarZenith, SolarAzimuth)
+            #SolarZenithDeg[K,I] = SolarZenith * DegreesPerRadian
+            #SolarZenithApp[K,I] = Apparent_Zenith(SolarZenithDeg[K,I])
+            #SolarAzimuthDeg[K,I] = SolarAzimuth * DegreesPerRadian
             #if Dbug(1):
             #    print('Latitude      :', StationLatDeg)
             #    print('Longitude     :', StationLonDeg)
-            #    print('Sol Zen (true):', SolarZenithDeg[K, I])
-            #    print('Sol Zen (app) :', SolarZenithApp[K, I])
-            #    print('Solar Azimuth :', SolarAzimuthDeg[K, I])
+            #    print('Sol Zen (true):', SolarZenithDeg[K,I])
+            #    print('Sol Zen (app) :', SolarZenithApp[K,I])
+            #    print('Solar Azimuth :', SolarAzimuthDeg[K,I])
             #    HALT()
             #WRITE(OutUnit, 9) InFile, DateTime.Year, DateTime.Month, DateTime.Day, DateTime.Hour, DateTime.Minute, DateTime.Second, SolarZenithApp[K, 1], (Wavelength_Aerosol[I], I=1, NumAerosolChannels)
             #for N in range(1, NumAzimuths+1):
@@ -800,16 +883,16 @@ for Year in range(YearMin, YearMax+1):
             #        HALT()
             #    I = 1
             #    NewStation = True
-            #    Satellite_Position(JulDay[I], TimeDay[K, I], NewStation, StationLatRad, StationLonRad, SunElements, SolarZenith, SolarAzimuth)
-            #    SolarZenithDeg[K, I] = SolarZenith * DegreesPerRadian
-            #    SolarZenithApp[K, I] = Apparent_Zenith(SolarZenithDeg[K, I])
-            #    SolarAzimuthDeg[K, I] = SolarAzimuth * DegreesPerRadian
+            #    Satellite_Position(JulDay[I], TimeDay[K,I], NewStation, StationLatRad, StationLonRad, SunElements, SolarZenith, SolarAzimuth)
+            #    SolarZenithDeg[K,I] = SolarZenith * DegreesPerRadian
+            #    SolarZenithApp[K,I] = Apparent_Zenith(SolarZenithDeg[K,I])
+            #    SolarAzimuthDeg[K,I] = SolarAzimuth * DegreesPerRadian
             #    if Dbug(1):
             #        print('Latitude      :', StationLatDeg)
             #        print('Longitude     :', StationLonDeg)
-            #        print('Sol Zen (true):', SolarZenithDeg[K, I])
-            #        print('Sol Zen (app) :', SolarZenithApp[K, I])
-            #        print('Solar Azimuth :', SolarAzimuthDeg[K, I])
+            #        print('Sol Zen (true):', SolarZenithDeg[K,I])
+            #        print('Sol Zen (app) :', SolarZenithApp[K,I])
+            #        print('Solar Azimuth :', SolarAzimuthDeg[K,I])
             #        HALT()
             #    WRITE(OutUnit, 9) InFile, DateTime.Year, DateTime.Month, DateTime.Day, DateTime.Hour, DateTime.Minute, DateTime.Second, SolarZenithApp[K, 1], (Wavelength_Aerosol[I], I=1, NumAerosolChannels)
             #    # Right hemisphere, 0-180 azimuth
@@ -849,16 +932,16 @@ for Year in range(YearMin, YearMax+1):
             #    HALT()
             #I = 1
             #NewStation = True
-            #Satellite_Position(JulDay[I], TimeDay[K, I], NewStation, StationLatRad, StationLonRad, SunElements, SolarZenith, SolarAzimuth)
-            #SolarZenithDeg[K, I] = SolarZenith * DegreesPerRadian
-            #SolarZenithApp[K, I] = Apparent_Zenith(SolarZenithDeg[K, I])
-            #SolarAzimuthDeg[K, I] = SolarAzimuth * DegreesPerRadian
+            #Satellite_Position(JulDay[I], TimeDay[K,I], NewStation, StationLatRad, StationLonRad, SunElements, SolarZenith, SolarAzimuth)
+            #SolarZenithDeg[K,I] = SolarZenith * DegreesPerRadian
+            #SolarZenithApp[K,I] = Apparent_Zenith(SolarZenithDeg[K,I])
+            #SolarAzimuthDeg[K,I] = SolarAzimuth * DegreesPerRadian
             #if Dbug(1):
             #    print('Latitude      :', StationLatDeg)
             #    print('Longitude     :', StationLonDeg)
-            #    print('Sol Zen (true):', SolarZenithDeg[K, I])
-            #    print('Sol Zen (app) :', SolarZenithApp[K, I])
-            #    print('Solar Azimuth :', SolarAzimuthDeg[K, I])
+            #    print('Sol Zen (true):', SolarZenithDeg[K,I])
+            #    print('Sol Zen (app) :', SolarZenithApp[K,I])
+            #    print('Solar Azimuth :', SolarAzimuthDeg[K,I])
             #    HALT()
             #WRITE(OutUnit, 91) InFile, DateTime.Year, DateTime.Month, DateTime.Day, DateTime.Hour, DateTime.Minute, DateTime.Second, SolarZenithApp[K, 1], (Wavelength_Aerosol[I], I=1, NumAerosolChannels)
             #for N in range(1, NumPPZeniths+1):
@@ -888,16 +971,16 @@ for Year in range(YearMin, YearMax+1):
             #        HALT()
             #    I = 1
             #    NewStation = True
-            #    Satellite_Position(JulDay[I], TimeDay[K, I], NewStation, StationLatRad, StationLonRad, SunElements, SolarZenith, SolarAzimuth)
-            #    SolarZenithDeg[K, I] = SolarZenith * DegreesPerRadian
-            #    SolarZenithApp[K, I] = Apparent_Zenith(SolarZenithDeg[K, I])
-            #    SolarAzimuthDeg[K, I] = SolarAzimuth * DegreesPerRadian
+            #    Satellite_Position(JulDay[I], TimeDay[K,I], NewStation, StationLatRad, StationLonRad, SunElements, SolarZenith, SolarAzimuth)
+            #    SolarZenithDeg[K,I] = SolarZenith * DegreesPerRadian
+            #    SolarZenithApp[K,I] = Apparent_Zenith(SolarZenithDeg[K,I])
+            #    SolarAzimuthDeg[K,I] = SolarAzimuth * DegreesPerRadian
             #    if Dbug(1):
             #        print('Latitude      :', StationLatDeg)
             #        print('Longitude     :', StationLonDeg)
-            #        print('Sol Zen (true):', SolarZenithDeg[K, I])
-            #        print('Sol Zen (app) :', SolarZenithApp[K, I])
-            #        print('Solar Azimuth :', SolarAzimuthDeg[K, I])
+            #        print('Sol Zen (true):', SolarZenithDeg[K,I])
+            #        print('Sol Zen (app) :', SolarZenithApp[K,I])
+            #        print('Solar Azimuth :', SolarAzimuthDeg[K,I])
             #        HALT()
             #    WRITE(OutUnit, 92) InFile, Instrument, DateTime.Year, DateTime.Month, DateTime.Day, DateTime.Hour, DateTime.Minute, DateTime.Second, SolarZenithApp[K, 1]
             #    for N in range(1, NumPPPZeniths+1):
@@ -932,13 +1015,13 @@ for Year in range(YearMin, YearMax+1):
             #    else:
             #        InUnit.close()
             #
-            #    LangFlag[0:2] = [False, False]
-            #    if DataType == 'sun' or DataType == 'lsu':
-            #        print('Langley processing...')
-            #        for I in range(2):
-            #            Nstart[I] = 1 + NumSunTriples[1] * (I - 1)
-            #            Nend[I] = Nstart[I] + NumSunTriples[I] - 1
-            #
+            LangFlag[0:2] = [False, False]
+            if DataType == 'sun' or DataType == 'lsu':
+                print('Langley processing...')
+                for I in [1,2]:
+                    Nstart[I-1] = NumSunTriples[1] * (I - 1)
+                    Nend[I-1] = Nstart[I-1] + NumSunTriples[I] 
+                    #print(NumSunTriples,Nstart,Nend)
             #        if Dbug[2]:
             #            print('Number of sun triples(am)  :', NumSunTriples[1])
             #            print('Number of sun triples(pm)  :', NumSunTriples[2])
@@ -952,101 +1035,95 @@ for Year in range(YearMin, YearMax+1):
             #            print('Nend   (pm)                :', Nend[2])
             #            HALT()
             #
-            #        FitFile = Make_File_Name(ResultPath, 'Langley', 'dat')
-            #        FitUnit = Next_Unit_Number()
-            #        open(FitFile, 'w')
-            #
-            #        for Iap in range(1, 3):
-            #            ObsDate = Date(Year, Month, Day)
-            #            Include = True
-            #            for Ic in range(1, NumCut + 1):
-            #                if ObsDate == CutList[Ic].Date and AmPm[Iap] == CutList[Ic].AP:
-            #                    Include = False
-            #
-            #            if Include:
-            #                FitUnit.write(f"#{Year:5d}{Month:5d}{Day:5d} {AmPm[Iap]}")
-            #
-            #            PresMean[Iap] = 0
-            #            N = 0
-            #            for K in range(Nstart[Iap], Nend[Iap] + 1):
-            #                if Pressure[K] > 0:
-            #                    N += 1
-            #                    PresMean[Iap] += Pressure[K]
-            #            PresMean[Iap] /= N
-            #
-            #            for N in range(1, NumChannels + 1):
-            #                Rayleigh(Dbug[2], Wavelength[N, Model], PresMean[Iap], RayleighOD[N])
-            #
-            #                if Dbug[2]:
-            #                    print('Wavelength   :', Wavelength[N, Model])
-            #                    print('Mean Pressure:', PresMean[Iap])
-            #                    print('RayleighOD   :', RayleighOD[N])
-            #
-            #            if NumSunTriples[Iap] >= MinSunTriples:
-            #                CheckTripletCv(Dbug[2], NumSunTriples[Iap], Nstart[Iap],
-            #                        Airmass[1, 2, I870],
-            #                        TripletCv[1, I870],
-            #                        SpreadFlag,
-            #                        NumOK[Iap], IndOK[1, Iap])
-            #
-            #                if NumOK[Iap] >= MinSunTriples and SpreadFlag:
-            #                    print(' Passed triplet cv langley filter')
-            #                    N = NumChannels
-            #                    I = 0
-            #                    for K in range(1, NumOK[Iap] + 1):
-            #                        for J in range(1, 4):
-            #                            I += 1
-            #                            X[I, 0:N] = Airmass[IndOK[K, Iap], J, 0:N]
-            #                            Y[I, 0:N] = LnSignal[IndOK[K, Iap], J, 0:N]
-            #
-            #                    NumPoints[Iap] = I
-            #
-            #                    CheckFitQuality(Dbug[2],
-            #                            NumPoints[Iap],
-            #                            X, Y,
-            #                            I870,
-            #                            MaxSdevFit,
-            #                            SpreadFlag,
-            #                            FitFlag)
-            #
-            #                    if SpreadFlag and FitFlag:
-            #                        LangFlag[Iap] = True
-            #                        print(' Passed fit quality langley filter')
-            #                        NumLangleys += 1
-            #
-            #                        for N in range(1, NumLangleyChannels[Model] + 1):
-            #                            print(' Wavelength #', N)
-            #                            BoxFit(NumPoints[Iap],
-            #                                    X[1, N], Y[1, N],
-            #                                    Intercept[Iap, N],
-            #                                    Slope[Iap, N],
-            #                                    Residual[N],
-            #                                    Erms[N],
-            #                                    DelIntercept[Iap, N],
-            #                                    DelSlope[Iap, N])
-            #
-            #                            Intercept[Iap, N] += 2.0 * log(DSunEarth[NStart[1]])
-            #
-            #                            AerosolOD[Iap, N] = -Slope[Iap, N] - RayleighOD[N] - OzoneOD[N]
-            #                            LnV0Glob[NumLangleys, N] = Intercept[Iap, N]
-            #                            AodGlob[NumLangleys, N] = AerosolOD[Iap, N]
-            #
-            #                        for N in range(1, NumLangleyChannels[Model]):
-            #                            for M in range(N + 1, NumLangleyChannels[Model] + 1):
-            #                                if AerosolOD[Iap, N] >= 0 and AerosolOD[Iap, M] >= 0:
-            #                                    Angstrom[Iap, N, M] = -log(AerosolOD[Iap, N] / AerosolOD[Iap, M]) / \
-            #                                            log(Wavelength[N, Model] / Wavelength[M, Model])
-            #                                else:
-            #                                    Angstrom[Iap, N, M] = -9.999
-            #
-            #                        AerosolOD[Iap, IWV] = AerosolOD[Iap, I870] * \
-            #                                (Wavelength[IWV, Model] / Wavelength[I870, Model]) ** \
-            #                                (-Angstrom[Iap, I670, I870])
-            #
-            #                        for I in range(1, NumPoints[Iap] + 1):
-            #                            U[I] = X[I, IWV] ** Bcoef
-            #                            V[I] = Y[I, IWV] + X[I, IWV] * (RayleighOD[IWV] + AerosolOD[Iap, IWV])
-            #
+                FitFile = ResultPath + 'Langley.dat'
+        #        open(FitFile, 'w')
+        #
+                for Iap in [0,1]:  # Morning/Afternoon
+                    ObsDate = dt.date(Year, Month, Day)
+                    Include = True
+                    for Ic in range(NumCut):
+                        if ObsDate == CutList[Ic].Date and AmPm[Iap] == CutList[Ic].AP:
+                            Include = False
+        
+                    #if Include:
+                    #    print(f"#{Year:5d}{Month:5d}{Day:5d} {AmPm[Iap]}") # write to fitfile
+        
+                    PresMean[Iap] = 0
+                    N = 0
+                    for K in range(Nstart[Iap], Nend[Iap]):
+                        if Pressure[K] > 0:
+                            N += 1
+                            PresMean[Iap] += Pressure[K]
+                    PresMean[Iap] /= N
+            
+                    for N in range(NumChannels):
+                        RayleighOD[N] = Rayleigh(Dbug[2], Wavelength[Model-1][N], PresMean[Iap])
+                        if Dbug[2]:
+                            print('Wavelength   :', Wavelength[N, Model])
+                            print('Mean Pressure:', PresMean[Iap])
+                            print('RayleighOD   :', RayleighOD[N])
+        
+                    if NumSunTriples[Iap] >= MinSunTriples:
+                        SpreadFlag, NumOK[Iap], IndOK = CheckTripletCv(Dbug[2], NumSunTriples[Iap+1], Nstart[Iap],AirMass[:,1,I870],TripletCv[:,I870])
+                                  
+                        if NumOK[Iap] >= MinSunTriples and SpreadFlag:
+                            print(' Passed triplet cv langley filter')
+                            N = NumChannels
+                            I = 0
+                            for K in range(NumOK[Iap]):
+                                for J in range(3):
+                                    I += 1
+                                    X[I, 0:N] = Airmass[IndOK[K, Iap], J, 0:N]
+                                    Y[I, 0:N] = LnSignal[IndOK[K, Iap], J, 0:N]
+            
+                            NumPoints[Iap] = I
+            
+                            CheckFitQuality(Dbug[2],
+                                        NumPoints[Iap],
+                                        X, Y,
+                                        I870,
+                                        MaxSdevFit,
+                                        SpreadFlag,
+                                        FitFlag)
+            
+                            if SpreadFlag and FitFlag:
+                                LangFlag[Iap] = True
+                                print(' Passed fit quality langley filter')
+                                NumLangleys += 1
+        
+                                for N in range(NumLangleyChannels[Model-1]):
+                                    print(' Wavelength #', N)
+                                    BoxFit(NumPoints[Iap],
+                                            X[1, N], Y[1, N],
+                                            Intercept[Iap, N],
+                                            Slope[Iap, N],
+                                            Residual[N],
+                                            Erms[N],
+                                            DelIntercept[Iap, N],
+                                            DelSlope[Iap, N])
+        
+                                    Intercept[Iap, N] += 2.0 * log(DSunEarth[NStart[0]])
+        
+                                    AerosolOD[Iap, N] = -Slope[Iap, N] - RayleighOD[N] - OzoneOD[N]
+                                    LnV0Glob[NumLangleys, N] = Intercept[Iap, N]
+                                    AodGlob[NumLangleys, N] = AerosolOD[Iap, N]
+            
+                                for N in range(NumLangleyChannels[Model-1]):
+                                    for M in range(N, NumLangleyChannels[Model-1]):
+                                        if AerosolOD[Iap, N] >= 0 and AerosolOD[Iap, M] >= 0:
+                                            Angstrom[Iap, N, M] = -log(AerosolOD[Iap, N] / AerosolOD[Iap, M]) / \
+                                                    log(Wavelength[N, Model] / Wavelength[M, Model])
+                                        else:
+                                            Angstrom[Iap, N, M] = -9.999
+        
+                                AerosolOD[Iap, IWV] = AerosolOD[Iap, I870] * \
+                                        (Wavelength[IWV][Model-1] / Wavelength[I870][Model-1]) ** \
+                                        (-Angstrom[Iap, I670, I870])
+            
+                                for I in range(NumPoints[Iap]):
+                                    U[I] = X[I, IWV] ** Bcoef
+                                    V[I] = Y[I, IWV] + X[I, IWV] * (RayleighOD[IWV] + AerosolOD[Iap, IWV])
+            
             #                        if Dbug[3]:
             #                            print('Signal    :', Y[I, IWV])
             #                            print('Airmass   :', X[I, IWV])
@@ -1058,60 +1135,59 @@ for Year in range(YearMin, YearMax+1):
             #                            print('V         :', V[I])
             #                            HALT()
             #
-            #                        Weight[0:NumPoints[Iap]] = 1.0
-            #
-            #                        ELFIT(NumPoints[Iap],
-            #                                Weight,
-            #                                U, V,
-            #                                Intercept[Iap, IWV],
-            #                                Slope[Iap, IWV],
-            #                                Residual[N],
-            #                                Erms[N],
-            #                                DelIntercept[Iap, IWV],
-            #                                DelSlope[Iap, IWV])
-            #
-            #                        Intercept[Iap, IWV] += 2.0 * log(DSunEarth[NStart[1]])
-            #
-            #                        if Slope[Iap, IWV] < 0:
-            #                            NumWVLangleys += 1
-            #                            WvapMean[Iap] = (-Slope[Iap, IWV] / Acoef) ** (1.0 / Bcoef)
-            #                            LnV0Glob[NumWVLangleys, IWV] = Intercept[Iap, IWV]
-            #                            AodGlob[NumWVLangleys, IWV] = WvapMean[Iap]
-            #                            OD_WvapMean[Iap, I1020] = H2O_k * WvapMean[Iap] ** H2O_e
-            #                        else:
-            #                            print('Water vapour below detection threshold')
-            #                            WvapMean[Iap] = 0
-            #                            OD_WvapMean[Iap, I1020] = 0
-            #
-            #                        OD_WvapMean[Iap, I1020] = OD_WvapMean[Iap, I1020]
-            #
-            #                        print('writing record to', FitFile)
-            #                        FitUnit.write(f'# {Wavelength[N, Model]:12.1f} ' +
-            #                                ' '.join(f'{Wavelength[N, Model]:18.1f}' for N in range(1, NumLangleyChannels[Model] + 1)) +
-            #                                f' {Wavelength[IWV, Model]:18.1f}')
-            #                        FitUnit.write('# ' + '  Airmass   lnV0  ' * 10)
-            #                        for I in range(1, NumPoints[Iap] + 1):
-            #                            FitUnit.write(' '.join(f'{X[I, N]:9.5f} {Y[I, N]:9.5f}' for N in range(1, NumLangleyChannels[Model] + 1)) +
-            #                                    f' {U[I]:9.5f} {V[I]:9.5f}')
-            #
-            #                            Langley_Mean_Temperature(Dbug[2],
-            #                                    NumOK[Iap], IndOK[1, Iap],
-            #                                    Temperature,
-            #                                    MeanDetectorTemp[Iap])
-            #                            DaysSinceEpoch[NumLangleys] = CalDay
-            #                        print(f'{AmPm[Iap]} {PresMean[Iap]:13.1f} {NumOK[Iap]:13d} ' +
-            #                                ' '.join(f'{Wavelength[N, Model]:13.0f}' for N in range(1, NumLangleyChannels[Model] + 1)) +
-            #                                f' {Wavelength[IWV, Model]:13.0f}')
-            #                        print(' '.join(f'{AerosolOD[Iap, N]:13.4f}' for N in range(1, NumLangleyChannels[Model] + 1)) +
-            #                                f' {WvapMean[Iap]:13.4f}')
-            #                    else:
-            #                        print(' Passed fit quality langley filter')
-            #                else:
-            #                    print(' Failed triplet cv langley filter')
-            #            else:
-            #                print(' Insufficient triplets')
-            #
-            #        FitUnit.close()
+                                Weight[0:NumPoints[Iap]] = 1.0
+        
+                                ELFIT(NumPoints[Iap],
+                                        Weight,
+                                        U, V,
+                                        Intercept[Iap, IWV],
+                                        Slope[Iap, IWV],
+                                        Residual[N],
+                                        Erms[N],
+                                        DelIntercept[Iap, IWV],
+                                        DelSlope[Iap, IWV])
+        
+                                Intercept[Iap, IWV] += 2.0 * log(DSunEarth[NStart[0]])
+        
+                                if Slope[Iap, IWV] < 0:
+                                    NumWVLangleys += 1
+                                    WvapMean[Iap] = (-Slope[Iap, IWV] / Acoef) ** (1.0 / Bcoef)
+                                    LnV0Glob[NumWVLangleys, IWV] = Intercept[Iap, IWV]
+                                    AodGlob[NumWVLangleys, IWV] = WvapMean[Iap]
+                                    OD_WvapMean[Iap, I1020] = H2O_k * WvapMean[Iap] ** H2O_e
+                                else:
+                                    print('Water vapour below detection threshold')
+                                    WvapMean[Iap] = 0
+                                    OD_WvapMean[Iap, I1020] = 0
+        
+                                OD_WvapMean[Iap, I1020] = OD_WvapMean[Iap, I1020]
+        
+                                print('writing record to', FitFile)
+                                FitUnit.write(f'# {Wavelength[N, Model]:12.1f} ' +
+                                        ' '.join(f'{Wavelength[N, Model]:18.1f}' for N in range(NumLangleyChannels[Model-1])) +
+                                        f' {Wavelength[IWV, Model]:18.1f}')
+                                FitUnit.write('# ' + '  Airmass   lnV0  ' * 10)
+                                for I in range(1, NumPoints[Iap] + 1):
+                                    FitUnit.write(' '.join(f'{X[I, N]:9.5f} {Y[I, N]:9.5f}' for N in range(NumLangleyChannels[Model-1])) +
+                                            f' {U[I]:9.5f} {V[I]:9.5f}')
+        
+                                    Langley_Mean_Temperature(Dbug[2],
+                                            NumOK[Iap], IndOK[1, Iap],
+                                            Temperature,
+                                            MeanDetectorTemp[Iap])
+                                    DaysSinceEpoch[NumLangleys] = CalDay
+                                print(f'{AmPm[Iap]} {PresMean[Iap]:13.1f} {NumOK[Iap]:13d} ' +
+                                        ' '.join(f'{Wavelength[N, Model]:13.0f}' for N in range(NumLangleyChannels[Model-1])) +
+                                        f' {Wavelength[IWV, Model]:13.0f}')
+                                print(' '.join(f'{AerosolOD[Iap, N]:13.4f}' for N in range(NumLangleyChannels[Model-1])) +
+                                        f' {WvapMean[Iap]:13.4f}')
+                            else:
+                                print(' Passed fit quality langley filter')
+                        else:
+                            print(' Failed triplet cv langley filter')
+                    else:
+                        print(' Insufficient triplets')
+            
             #
             #    if LangFlag[1] or LangFlag[2]:
             #        DayYear = Day_of_Year(Day, Month, Year)
