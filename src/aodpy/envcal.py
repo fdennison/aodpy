@@ -1,554 +1,190 @@
-from cimel_module import *
-#from constants_module import *
-#from navigation_module import *
-from utils_module import *
-import time_module as tm
-import os as os
-import pandas as pd
-import math
 import datetime as dt
+import pandas as pd
+import numpy as np
+import os as os
+import math
+import fileread_module as fr
 
-Dbug = [False, False, False]
-FileOK = False
-Instrument = None
-Card = None
-Barometer = None
-BarometerToUse = None
-CardForBarometer = None
-Anemometer = None
-Year = None
-Month = None
-Day = None
-YearMin = None
-YearMax = None
-MonthMin = None
-MonthMax = None
-MMin = None
-MMax = None
-DayMin = None
-DayMax = None
-Dmin = None
-Dmax = None
-InUnit = None
-BaroUnit = None
-SumUnit = None
-HpaUnit = None
-EnvUnit = None
-ConfigUnit = None
-NumDays = None
+site = 'jb1'
+rootpath = '/home/599/fd0474/AODcode/SampleData/'
+startdate = dt.date(2015,6,2)
+enddate = dt.date(2016,6,30)
 
-LoggerVersion = ''
-Extension = ''
-Station = ''
-Year_Code = ''
-Month_Code = ''
-Day_Code = ''
+#Logger clock error (+ve for slow) 
+ce=dt.timedelta(hours=0,minutes=0,seconds=0)
 
-RootPath = ''
-DataPath = ''
-AnalogCalPath = ''
-ConfigPath = ''
-FilePath = ''
-SumPath = ''
-FileRoot = ''
-BaroFile = ''
-InFile = ''
-SumFile = ''
-HpaFile = ''
-EnvFile = ''
-ConfigFile = ''
+configfile = rootpath+'config/'+site+'.cfn'
+config = fr.Read_Site_Configuration(configfile, startdate)
+stationlat = config.attrs['Latitude'] #-12.6607
+stationlon = config.attrs['Longitude'] #132.8931
+model = config.CimelModel
+inst = config.CimelNumber
+card = config.Card
+loggerversion = 'v' + str(config.Version).zfill(1)i
 
-Status = None  # Type (Status_)
-Env = None  # Type (Raw_Environment_Record)
-Pressure = None  # Type (Real_Stat)
-Temperature = None  # Type (Real_Stat)
-WindV = None  # Type (Real_Stat)
-WindD = None  # Type (Real_Stat)
-
-ObsDate = None  # Type (Date)
-StartDate = None  # Type (Date)
-EndDate = None  # Type (Date)
-
-DateTimeUTC = None  # Type (Date_Time)
-
-I = None
-J = None
-K = None
-N = None
-Eof = None
-HourIndex = None
-NumBaroCals = None
-NumWindCals = None
-NumTempCals = None
-NumVoltCals = None
-DTimeSec = None
-
-YMDHMS = [None] * 6
-TimeZoneOffset = [None] * 3
-
-MaxCards = 32
-MaxBaro = 32
-PCalDate = [None] * (MaxCards)
-PCalDate0 = None  # Type (Date)
-WCalDate = [None] * (MaxCards)  # Type (Date)
-TCalDate = [None] * (MaxCards)  # Type (Date)
-VCalDate = [None] * (MaxCards)  # Type (Date)
-
-PCoef = [None] * (MaxCards)
-PTCoef = [None] * (MaxCards) 
-WCoef = [None] * (MaxCards)
-VCoef = [None] * (MaxCards) 
-TCoef = [None] * (MaxCards) 
-
-Vbatt = None  # Type (LongReal)
-DelPressure = None  # Type (LongReal)
-Pressure_UnTComp = None  # Type (LongReal)
-TZ = None  # Type (Time)
-CE = None  # Type (Time)
-
-print("Envcal")
-# envcal.men
-Dbug[1]=False
-Extension='rnv'
-RootPath='/home/599/fd0474/AODcode/SampleData'
-DataPath='/agsdat'
-ConfigPath='/config'
-Station='jb1'
-AnalogCalPath='/analog.cal'
-SumPath='/analysis/tta/sep02'
-YearMin=2016
-MonthMin=1
-DayMin=1
-YearMax=2016
-MonthMax=1
-DayMax=31
-CE=dt.timedelta(hours=0,minutes=0,seconds=0)
-
-ConfigPath = RootPath+ConfigPath
-print('config path=', ConfigPath)
-ConfigFile = ConfigPath+'/'+Station+'.cfn'
-print(' Config File=', ConfigFile)
-
-# Get configuration on start date
-ObsDate = dt.date(YearMin, MonthMin, DayMin)
-Config = Read_Site_Configuration(Dbug[0], ConfigFile, ObsDate)
-print(Config)
-StartDate = Config.StartDate
-EndDate = Config.EndDate
-Instrument = Config.CimelNumber
-LoggerVersion = 'v' + str(Config.Version).zfill(1)
-Card = Config.Card
-Barometer = Config.Baro
-Anemometer = Config.Wind
-TZ = Config.TOffset
-
-    # If there is more than one entry for a given instrument,
-    # the last entry is the one used. Ideally there should
-    # be discrimination using date of calibration.
-
-if Card >= 0:
-    #    Menu.FileName = os.path.join(RootPath, AnalogCalPath, 'tcal.men')
-#    # call Menu_Edit(Menu)
-#    Menu.Value = read_menu_value()
-#    NumTempCals, TempCalData = parse_tcal_menu_value(Menu.Value)
-#    for j, tcal_date, tcoef in TempCalData:
-#        TCalDate[j] = tcal_date
-#      TCoef[0][j], TCoef[1][j] = tcoef
-    TCalDate[1]=tm.Date(1998,1,1)    
-    TCoef[1]=[-12.9,0.089]
-    TCalDate[2]=tm.Date(1998,1,1)    
-    TCoef[2]=[-12.9,0.089]
-    TCalDate[3]=tm.Date(1998,1,1)    
-    TCoef[3]=[-12.9,0.089]
-    TCalDate[4]=tm.Date(1998,1,1)    
-    TCoef[4]=[-12.9,0.089]
-    TCalDate[5]=tm.Date(2009,9,16)    
-    TCoef[5]=[-31.35,0.1255]
-    TCalDate[6]=tm.Date(1998,1,1)   
-    TCoef[6]=[-12.9,0.089]
-    TCalDate[7]=tm.Date(1998,1,1)    
-    TCoef[7]=[-12.9,0.089]
-    TCalDate[8]=tm.Date(1998,1,1)    
-    TCoef[8]=[-12.9,0.089]
-    TCalDate[9]=tm.Date(1998,1,1)    
-    TCoef[9]=[-12.9,0.089]
-    TCalDate[10]=tm.Date(1998,1,1)    
-    TCoef[10]=[-12.9,0.089]
-    TCalDate[11]=tm.Date(1998,1,1)    
-    TCoef[11]=[-12.9,0.089]
-    TCalDate[12]=tm.Date(1998,1,1)    
-    TCoef[12]=[-12.9,0.089]
-    TCalDate[21]=tm.Date(1998,1,1)    
-    TCoef[21]=[-12.9,0.089]
-    TCalDate[22]=tm.Date(1998,1,1)    
-    TCoef[22]=[-12.9,0.089]
-    TCalDate[23]=tm.Date(1998,1,1)    
-    TCoef[23]=[-12.9,0.089]
-    TCalDate[24]=tm.Date(1998,1,1)    
-    TCoef[24]=[-12.9,0.089]
-
-if Barometer > 0:
-    print(' setting baro File')
-    BaroFile =RootPath+AnalogCalPath+'/pcal/'+LoggerVersion+'/pcal.dat'
-    print(' Baro File=', BaroFile)
-    barocolnames=['Year', 'Month', 'Day', 'Baro', 'Card', 'PCoef0', 'PCoef1', 'PTCoef0', 'PTCoef1']
-    BaroDF=pd.read_csv(BaroFile, skiprows=4, header=None, delimiter=r'\s+', names=barocolnames) 
-    BaroDF['Date'] = [dt.date(y,m,d) for y,m,d in zip(BaroDF.Year, BaroDF.Month, BaroDF.Day)] 
-    #print(BaroDF)
-    NumBaroCal = len(BaroDF.index)
-
-    # cal with correct card and baro
-    baroidx = [i for i,(x,y) in enumerate(zip(BaroDF.Baro, BaroDF.Card)) if (x==Barometer)&(y==Card)]
-    if len(baroidx)==1:
-        baroidx=baroidx[0]
-    elif len(baroidx)>1:
-        print('multiple cals with this baro and card?')
-    else:
-        print('no calabration for Baro = {0} and Card = {1}'.format(Barometer,Card))
-        #print(BaroDF)
-        #baroidx = int(input(' Choose a cal from the following by inputing the row index: '))
-        baroidx=3
-
-    PCoef0 = BaroDF.iloc[baroidx].PCoef0
-    PCoef1 = BaroDF.iloc[baroidx].PCoef1
-    PTCoef0 = BaroDF.iloc[baroidx].PTCoef0
-    PTCoef1 = BaroDF.iloc[baroidx].PTCoef1
-    if math.isnan(PTCoef0):
-        PTCoef0=0
-        PTCoef1=0
-    BarometerCal = BaroDF.iloc[baroidx].Baro
-    CardforBarometer = BaroDF.iloc[baroidx].Card
-    BaroCalDate = BaroDF.iloc[baroidx].Date
-
-#    open_file(BaroUnit, BaroFile, 'read')
-#    for i in range(2):
-#        for j in range(MaxBaro + 1):
-#            for k in range(MaxCards + 1):
-#                PCoef[i][j][k] = -1.0  # Missing value flag
-#    skip_lines(BaroUnit, 1)
-#    NumBaroCals = read_int(BaroUnit)
-#    skip_lines(BaroUnit, 1)
-#    print(13)
-#    for N in range(1, NumBaroCals + 1):
-#        PCalDate0, J, K, PCoefData, PTCoefData = read_pcal_data(BaroUnit)
-#        PCalDate[J][K] = PCalDate0
-#        for i in range(2):
-#            PCoef[i][J][K] = PCoefData[i]
-#            PTCoef[i][J][K] = PTCoefData[i]
-#        print(14, J, K, PCalDate0)
-#    BarometerToUse = Barometer
-#    CardForBarometer = Card
-#    J = Barometer
-#    K = Card
-#if PCoef[0][J][K] < 0.0:
-#    print('No cals for Barometer, card=', J, K)
-#    print('Select (Baro,Card) indices from above list')
-#    J, K = read_input()
-#    BarometerToUse = J
-#    CardForBarometer = K
-#    print('Cal date=', PCalDate[J][K])
-#    print('Pcoef   =', [PCoef[i][J][K] for i in range(2)])
-#    print('PTCoef  =', [PTCoef[i][J][K] for i in range(2)])
-#    halt()
-#else:
-#    PCalDate[Barometer][Card] = Date(0, 0, 0)
-#
-if Anemometer > 0:
-    #        Menu.FileName = os.path.join(RootPath, AnalogCalPath, 'wcal.men')
-#        # call Menu_Edit(Menu)
-#        Menu.Value = read_menu_value()
-#        NumWindCals, WindCalData = parse_wcal_menu_value(Menu.Value)
-#        for j, wcal_date, wcoef in WindCalData:
-#            WCalDate[j] = wcal_date
-#            WCoef[0][j], WCoef[1][j] = wcoef
-      NumWindCals=5
-      WCalDate[1]=tm.Date(1999, 3, 11)
-      WCoef[1]=[0.289, 0.2699]
-      WCalDate[2]=tm.Date(1999, 3, 11)
-      WCoef[2]=[0.337, 0.2673]
-      WCalDate[3]=tm.Date(2001, 1, 8)
-      WCoef[3]=[0.441, 0.2496]
-      WCalDate[4]=tm.Date(2001, 1, 8)
-      WCoef[4]=[0.413, 0.2510]
-      WCalDate[5]=tm.Date(2001, 1, 8)
-      WCoef[5]=[0.413, 0.2510]  
-else:
-    WCalDate[Anemometer] = tm.Date(0, 0, 0)
-
-if Card >= 0:
-    #        Menu.FileName = os.path.join(RootPath, AnalogCalPath, 'vcal.men')
-#        # call Menu_Edit(Menu)
-#        Menu.Value = read_menu_value()
-#        NumVoltCals, VoltCalData = parse_vcal_menu_value(Menu.Value)
-#        for j, vcal_date, vcoef in VoltCalData:
-#            VCalDate[j] = vcal_date
-#            VCoef[0][j], VCoef[1][j] = vcoef
-      VCalDate[1]=tm.Date(1999,7,28)   
-      VCoef[1]=[0.305,0.015691]
-      VCalDate[2]=tm.Date(1999,7,28)   
-      VCoef[2]=[0.212,0.01593]
-      VCalDate[3]=tm.Date(1999,7,28)   
-      VCoef[3]=[0.166,0.015838]
-      VCalDate[4]=tm.Date(1999,7,28)   
-      VCoef[4]=[0.06,0.015879]
-      VCalDate[5]=tm.Date(2000,8,10)   
-      VCoef[5]=[-0.01,0.016]
-      VCalDate[6]=tm.Date(2001,5,2)   
-      VCoef[6]=[0.039,0.015786]
-      VCalDate[10]=tm.Date(2018,6,7)   
-      VCoef[10]=[0.29,0.017708]
-      VCalDate[11]=tm.Date(2005,7,29)   
-      VCoef[11]=[0.053,0.01863]
-      VCalDate[12]=tm.Date(2005,7,29)   
-      VCoef[12]=[0.072,0.01856]
-      VCalDate[21]=tm.Date(2009,5,11)   
-      VCoef[21]=[0.1466,0.0159]
-      VCalDate[22]=tm.Date(2009,5,11)   
-      VCoef[22]=[0.0461,0.0159]
-      VCalDate[23]=tm.Date(2009,5,11)   
-      VCoef[23]=[0.0461,0.0159]
-      VCalDate[24]=tm.Date(2009,5,11)   
-      VCoef[24]=[0.0461,0.0159]
-
-OutRootPath = RootPath+'/PyOut/'+Station+'/' 
-SumPath = OutRootPath + SumPath + '/#' + str(Instrument).zfill(2) +'/'
-InRootPath = RootPath + DataPath + '/' + Station + '/#' + str(Instrument).zfill(2) + '/'
-
-def write_env_header(filename, Station, TZ, Instrument, Barometer, Card, BaroCal, CardForBarometer,
+def write_env_header(filename, Station, TZ, Instrument, Barometer, Card, BaroCal, CardforBarometer,
                      BaroCalDate, Anemometer, WCalDate, LoggerVersion, VCalDate):
     os.makedirs(os.path.dirname(filename), exist_ok=True)
     with open(filename, "w") as f:
         f.write('# Station              {}\n'.format(Station))
         f.write('# Time offset          {}\n'.format(TZ))
         f.write('# Cimel                 {}\n'.format(Instrument))
-        f.write('# Barometer, Card at site      {0}  {1}\n'.format(Barometer,Card))
-        f.write('# Barometer, Card used in cal  {0}  {1}   Cal Date {2}\n'.format(BaroCal,CardforBarometer,BaroCalDate))
-        f.write('# Anemometer            {0}            Cal Date    {1}\n'.format(Anemometer,WCalDate[Anemometer]))
+        f.write('# Barometer, Card at site      {0:d}  {1:d}\n'.format(Barometer,Card))
+        f.write('# Barometer, Card used in cal  {0:d}  {1:d}   Cal Date {2}\n'.format(int(BaroCal),int(CardforBarometer),BaroCalDate))
+        f.write('# Anemometer            {0}            Cal Date    {1}\n'.format(Anemometer,WCalDate))
         f.write('# LoggerVersion         {0}\n'.format(LoggerVersion))
-        f.write('# Card                  {0}            Cal Date {1}\n'.format(Card,VCalDate[Card]))
+        f.write('# Card                  {0}            Cal Date {1}\n'.format(Card,VCalDate))
+
+
+caldir = rootpath+'/analog.cal_py/'
+
+if card>0:
+    vcal = pd.read_csv(caldir+'vcal.men', skiprows=3, header=None, names=['card','y','m','d','vcoef0','vcoef1'],  delimiter=r'\s+', usecols=range(0,6), index_col=0)
+    vcal = vcal.loc[card]
+    #vcoef = [vcal.vcoef0, vcal.vcoef1]
+    
+    tcal = pd.read_csv(caldir+'tcal.men', skiprows=3, header=None, names=['y','m','d','tcoef0','tcoef1'], delimiter=r'\s+')
+    tcal = tcal.loc[card]
+    #tcoef = [tcal.tcoef0, tcal.tcoef1]
+
+    vcaldate = dt.date(int(vcal.y),int(vcal.m),int(vcal.d))
+else:
+    vcaldate = []
+    
+if config.Wind>0:
+    wcal = pd.read_csv(caldir+'wcal.men', skiprows=3, header=None, names=['y','m','d','wcoef0','wcoef1'], delimiter=r'\s+')
+    wcal = wcal.loc[config.Wind]
+    #wcoef = [wcal.wcoef0, wcal.wcoef1]
+    wcaldate = dt.date(int(wcal.y),int(wcal.m),int(wcal.d))
+else:
+    wcaldate = []
+
+if config.Baro>0:
+    pcal_list = pd.read_csv(caldir+'pcal.dat', skiprows=4, header=None,  delimiter=r'\s+',
+                            names=['y','m','d','baro', 'card', 'pcoef0', 'pcoef1', 'ptcoef0', 'ptcoef1'])
+    pcal_list.fillna(0, inplace=True)
+    pcal = pcal_list.loc[(pcal_list.card==card) & (pcal_list.baro==config.Baro)]
+    if len(pcal)==0:
+        # print(f'No P cal that matches both card number [{card}] and baro number [{config.Baro}]')
+        # print(pcal_list)
+        # pcal_idx = int(input('choose cal by entering the index from the following list'))
+        # pcal = pcal_list.loc[pcal_idx]
+        pcal = pcal_list[pcal_list.baro==config.Baro].iloc[0]
+    else:
+        pcal = pcal.iloc[0]
         
+    pcaldate = dt.date(int(pcal.y),int(pcal.m),int(pcal.d))
+else:
+    pcaldate = []
 
+datelist = pd.date_range(startdate,enddate,freq='d')  
 
-for Year in range(YearMin, YearMax + 1):
-    Year_Code = str(Year).zfill(4)
-    MMin = 1
-    MMax = 12
-    if Year == YearMin:
-        MMin = MonthMin
-    if Year == YearMax:
-        MMax = MonthMax
-    for Month in range(MMin, MMax + 1):
-        Month_Code = str(Month).zfill(2)
-        Dmin = 1
-        Dmax = tm.days_in_month(Month, Year)
-        if Month == MonthMin:
-            Dmin = DayMin
-        if Month == MonthMax:
-            Dmax = DayMax
-        for Day in range(Dmin, Dmax + 1):
-            Day_Code = str(Day).zfill(2)
+outrootpath = rootpath + 'PyOut/' 
+inrootpath = rootpath + 'agsdat/' 
 
-            print('*************************************')
-            InFilePath = os.path.join(InRootPath, '', Year_Code, '', Month_Code, '', Day_Code, '')
-            ObsDate = dt.date(Year, Month, Day)
+for dii in datelist:
+    obsdate = pd.to_datetime(dii).date()
+    
+    subdir = site + '/#' + str(inst).zfill(2) + '/' + obsdate.strftime("%Y") +'/'+ obsdate.strftime("%m") +'/'+ obsdate.strftime("%d") + '/'
+    fileroot = obsdate.strftime("%y%m%d")
+    
 
-            if tm.datediff(ObsDate,StartDate) < 0:
-                print(' Date preceeds first valid date of configuration!')
-                print('Start date', StartDate)
-                print('End   date', EndDate)
-                print('Date      ', ObsDate)
-                NumDays = ObsDate - StartDate
-                print('Table start to date', NumDays)
-                break
-            elif tm.datediff(EndDate,ObsDate) < 0:
-                print(' Date is after last valid date of configuration!')
-                print('End   date', EndDate)
-                print('Date      ', ObsDate)
-                NumDays = EndDate - ObsDate
-                print('Date to Table end', NumDays)
-                break
+    infile = inrootpath +  subdir + fileroot + '.rnv'
+    if os.path.isfile(infile):
+        env = pd.read_csv(infile, header=None, names=['Year', 'Month', 'Day', 'Hour', 'minute', 'Second','Pmean_in', 'Pmin_in', 'Pmax_in', 'Psd_in',
+                                                      'Tmean_in', 'Tmin_in', 'Tmax_in', 'Tsd_in','WVmean_in', 'WVmin_in', 'WVmax_in', 'WVsd_in',
+                                                      'WDmean_in', 'WDmin_in', 'WDmax_in', 'WDsd_in','VBatt_in'], delimiter=r'\s+')
+        
+        env['DateTime'] = [dt.datetime(y,m,d,h,mi,s) for y,m,d,h,mi,s in zip(env.Year, env.Month, env.Day, env.Hour, env.minute, env.Second)]
+        
+        env['Tmean'] = tcal.tcoef0 + tcal.tcoef1 * env.Tmean_in
+        env['Tmin'] = env.Tmean - tcal.tcoef1 * env.Tmin_in
+        env['Tmax'] = env.Tmean + tcal.tcoef1 * env.Tmax_in
+        env['Tsd'] = tcal.tcoef1 * env.Tsd_in
+        
+        if config.Baro>0:
+            env['Pmean'] = pcal.pcoef0 + pcal.pcoef1 * env.Pmean_in
+            env['Pmin'] = env.Pmean - pcal.pcoef1 * env.Pmin_in
+            env['Pmax'] = env.Pmean + pcal.pcoef1 * env.Pmax_in
+            env['Psd'] = pcal.pcoef1 * env.Psd_in
+        
+            env['Pressure_UnTComp'] = env.Pmean
+            env['DelPressure'] = pcal.ptcoef1 * (env.Tmean - pcal.ptcoef0)
+            env['Pmean'] = env.Pmean - env.DelPressure
+            env['Pmin'] = env.Pmin - env.DelPressure
+            env['Pmax'] = env.Pmax - env.DelPressure
+        else:
+            env['POutmean'] = 0
+            env['Pmin'] =0
+            env['Pmax'] = 0
+            env['Psd'] = 0
+        
+        if config.Wind>0:
+            env['WindVmean'] = wcal.wcoef0 + wcal.wcoef1 * env.WVmean_in / 100
+            env['WindVmin'] = WindV.mean - wcal.wcoef1 * env.WVmin_in / 100
+            env['WindVmax'] = WindV.mean + wcal.wcoef1 * env.WVmax_in / 100
+            env['WindVsd'] = wcal.wcoef1 * env.WVsd_in / 100
+        else:
+            env['WindVmean'] = -1.0
+            env['WindVmin'] = -1.0
+            env['WindVmax'] = -1.0
+            env['WindVsd'] = -1.0
+        
+        if config.Wind>0:
+            env['WindDmean'] = env.WDmean_in / 100
+            # Boom points west not north, so rotate axes by -90 (+270) degrees.
+            env['WindDmean'] = (env.WindDmean + 270.0) % 360.0
+            env['WindDmin'] = env.WDmean - env.WDmin_in / 100
+            env['WindDmax'] = env.WDmean + env.WDmax_in / 100
+            env['WindDsd'] = env.WDsd_in / 100
+        else:
+            env['WindDmean'] = 0
+            env['WindDmin'] = 0
+            env['WindDmax'] = 0
+            env['WindDsd'] = 0
+        
+        env['VBatt'] = vcal.vcoef0 + vcal.vcoef1 * env.VBatt_in
+        
+        # Add Time zone offset (TZ=-10h for AEST)
+        env['DateTimeUTC'] = env.DateTime + config.TOffset
+        
+        # Add clock error.
+        # Negative error: Fast clock
+        # Positive error: Slow clock
+        # NB This convention differs from that used before October 2000
+        env['DateTimeUTC'] = env.DateTimeUTC + ce
+    
+        
+        hpafile = outrootpath + subdir + fileroot + '.hpa'
+        os.makedirs(os.path.dirname(hpafile), exist_ok=True)
+        write_env_header(hpafile, site, config.TOffset , inst, config.Baro, card, pcal.baro, pcal.card,
+                         pcaldate, config.Wind, wcaldate, loggerversion, vcaldate)
+        with open(hpafile, 'a') as f:
+            f.write('#YYYY MM dd hh mm ss P[raw]  Tmean   DelP P[comp]\n')   
+            f.write(env.to_string(header=False, index=False, columns=['DateTimeUTC', 'Pressure_UnTComp', 'Tmean', 'DelPressure', 'Pmean'],
+                                                             formatters={'Pressure_UnTComp':'{:6.1f}'.format, 'Tmean':'{:6.1f}'.format, 'DelPressure':'{:6.1f}'.format, 'Pmean':'{:6.1f}'.format}))
+            f.write('\n')   
+        
+        envfile = outrootpath + subdir + fileroot + '.env'
+        os.makedirs(os.path.dirname(envfile), exist_ok=True)
+        write_env_header(envfile, site, config.TOffset , inst, config.Baro, card, pcal.baro, pcal.card,
+                         pcaldate, config.Wind, wcaldate, loggerversion, vcaldate) 
+        with open(envfile, 'a') as f:
+            f.write('#YYYY MM dd hh mm ss            Pressure               Temperature               Wind speed (m/s)         Wind direction (E of N)   Battery voltage\n')
+            f.write('#                     mean    min    max   sdev   mean    min    max   sdev   mean    min    max   sdev   mean    min    max   sdev\n') 
+            f.write(env.to_string(header=False, index=False, columns=['DateTimeUTC', 'Pmean', 'Pmin', 'Pmax', 'Psd',
+                                                                  'Tmean', 'Tmin', 'Tmax', 'Tsd',
+                                                                  'WindVmean', 'WindVmin', 'WindVmax', 'WindVsd',
+                                                                  'WindDmean', 'WindDmin', 'WindDmax', 'WindDsd',
+                                                                  'VBatt'],
+                                                           formatters={'Pmean':'{:6.1f}'.format, 'Pmin':'{:6.1f}'.format, 'Pmax':'{:6.1f}'.format, 'Psd':'{:6.2f}'.format,
+                                                                  'Tmean':'{:6.1f}'.format, 'Tmin':'{:6.1f}'.format, 'Tmax':'{:6.1f}'.format, 'Tsd':'{:6.2f}'.format,
+                                                                  'WindVmean':'{:6.1f}'.format, 'WindVmin':'{:6.1f}'.format, 'WindVmax':'{:6.1f}'.format, 'WindVsd':'{:6.2f}'.format,
+                                                                  'WindDmean':'{:6.1f}'.format, 'WindDmin':'{:6.1f}'.format, 'WindDmax':'{:6.1f}'.format, 'WindDsd':'{:6.2f}'.format,
+                                                                  'VBatt':'{:6.2f}'.format}))
+            f.write('\n') 
 
-            FileRoot = Year_Code[2:4] + Month_Code + Day_Code
-            InFile = InFilePath + FileRoot + '.'+Extension
-            print(' Input File=', InFile)
-            #FileRoot = FileRoot.strip()
-            HpaFile = OutRootPath + FileRoot +  '.hpa'
-            print(' HpaFile=', HpaFile)
-            write_env_header(HpaFile, Station, TZ, Instrument, Barometer, Card, BarometerCal, CardForBarometer,
-                     BaroCalDate, Anemometer, WCalDate, LoggerVersion, VCalDate)
-            with open(HpaFile, "a") as f:
-                f.write('#YYYY MM dd hh mm ss P[raw]  Tmean   DelP P[comp]\n')
-
-            if Extension == 'sta':
-                pass
-            elif Extension == 'rnv':
-                EnvFile = OutRootPath + FileRoot + '.env'
-                print(' EnvFile=', EnvFile)
-                write_env_header(EnvFile, Station, TZ, Instrument, Barometer, Card,
-                        BarometerCal, CardForBarometer, BaroCalDate, Anemometer,
-                        WCalDate, LoggerVersion, VCalDate)
-                with open(EnvFile, 'a') as f:
-                    f.write('#YYYY MM dd hh mm ss            Pressure               Temperature               Wind speed (m/s)         Wind direction (E of N)   Battery voltage')
-                    f.write('#                     Mean    Min    Max   Sdev   Mean    Min    Max   Sdev   Mean    Min    Max   Sdev   Mean    Min    Max   Sdev')
-                Env = pd.read_csv(InFile, header=None, delimiter=r'\s+')
-                Env.rename(columns={0:'Year', 1:'Month', 2:'Day', 3:'Hour', 4:'Minute', 5:'Second',
-                                    6:'Pmean', 7:'Pmin', 8:'Pmax', 9:'Psd',
-                                    10:'Tmean', 11:'Tmin', 12:'Tmax', 13:'Tsd',
-                                    14:'WVmean', 15:'WVmin', 16:'WVmax', 17:'WVsd',
-                                    18:'WDmean', 19:'WDmin', 20:'WDmax', 21:'WDsd',
-                                    22:'VBatt'}, inplace=True)
-                Env['DateTime'] = [dt.datetime(y,m,d,h,mi,s) for y,m,d,h,mi,s in zip(Env.Year, Env.Month, Env.Day, Env.Hour, Env.Minute, Env.Second)]
-                J = Card
-                Env['TOutMean'] = TCoef[J][0] + TCoef[J][1] * Env.Tmean
-                #Temperature.Min = Temperature.Mean - TCoef[J][1] * Env.Tmin
-                #Temperature.Max = Temperature.Mean + TCoef[J][1] * Env.Tmax
-                #Temperature.Sdev = TCoef[J][0] * Env.Tsdev
-                if Barometer > 0:
-                    J = BarometerToUse
-                    K = CardForBarometer
-                    Env['POutMean'] = PCoef0 + PCoef1 * Env.Pmean
-                    #Pressure.Min = Pressure.Mean - PCoef1 * Env.Pmin
-                    #Pressure.Max = Pressure.Mean + PCoef1 * Env.Pmax
-                    #Pressure.Sdev = PCoef1 * Env.Psdev
-
-                    Env['Pressure_UnTComp'] = Env.POutMean
-                    Env['DelPressure'] = PTCoef1 * (Env.TOutMean - PTCoef0)
-                    Env['POutMean'] = Env.POutMean - Env.DelPressure
-                    #Pressure.Min = Pressure.Min - DelPressure
-                    #Pressure.Max = Pressure.Max - DelPressure
-                else:
-                    Env['POutMean'] = 0
-                    #Pressure.Min = 0
-                    #Pressure.Max = 0
-                    #Pressure.Sdev = 0
-
-                if Anemometer > 0:
-                    J = Anemometer
-                    Env['WindVOutMean'] = WCoef[J][0] + WCoef[J][1] * Env.WVmean / 100
-                    #WindV.Min = WindV.Mean - WCoef[J][1] * Env.WVmin / 100
-                    #WindV.Max = WindV.Mean + WCoef[J][1] * Env.WVmax / 100
-                    #WindV.Sdev = WCoef[J][1] * Env.WVsdev / 100
-                else:
-                    Env['WindVOutMean'] = -1.0
-                    #WindV.Min = -1.0
-                    #WindV.Max = -1.0
-                    #WindV.Sdev = -1.0
-
-                if Anemometer > 0:
-                    J = Anemometer
-                    Env['WindDOutMean'] = Env.WDmean / 100
-                    # Boom points west not north, so rotate axes by -90 (+270) degrees.
-                    Env['WindDOutMean'] = (Env.WindDOutMean + 270.0) % 360.0
-                    #WindD.Min = WindD.Mean - Env.WDmin / 100
-                    #WindD.Max = WindD.Mean + Env.WDmax / 100
-                    #WindD.Sdev = Env.WDsdev / 100
-                else:
-                    Env['WindDOutMean'] = 0
-                    #WindD.Min = 0
-                    #WindD.Max = 0
-                    #WindD.Sdev = 0
-
-                J = Card
-                Env['VBattOut'] = VCoef[J][0] + VCoef[J][1] * Env.VBatt
-
-                # Add Time zone offset (TZ=-10h for AEST)
-                Env['DateTimeUTC'] = Env.DateTime + TZ
-                # Add clock error.
-                # Negative error: Fast clock
-                # Positive error: Slow clock
-                # NB This convention differs from that used before October 2000
-                Env['DateTimeUTC'] = Env.DateTimeUTC + CE
-                
-                if Dbug[0]:
-                    print('DateTimeLoc:', Env.DateTime)
-                    print('DateTimeUTC:', Env.DateTimeUTC)
-
-                #write_hpa_data(HpaUnit, DateTimeUTC, Pressure_UnTComp, Temperature.Mean,
-                #        DelPressure, Pressure.Mean)
-                with open(HpaFile, 'a') as f:
-                    f.write(Env.to_string(header=False, index=False, columns=['DateTimeUTC', 'Pressure_UnTComp', 'TOutMean', 'DelPressure', 'POutMean']))
-                    f.write('\n')
-
-                if Dbug[0]:
-                    print('DateTimeLoc:', Env.DateTime)
-                    print('DateTimeUTC:', Env.DateTimeUTC)
-                    print('Pressure:', Env.POutMean)
-
-                    #write_env_data(EnvUnit, DateTimeUTC, Pressure, Temperature, WindV, WindD, VBatt)
-                with open(EnvFile, 'a') as f:
-                    f.write(Env.to_string(header=False, index=False, columns=['DateTimeUTC', 'POutMean', 'TOutMean', 'WindVOutMean',
-                                                                              'WindDOutMean','VBattOut']))
-                    f.write('\n')
-
-                    #Env, Eof = read_raw_environment_record(Dbug[0], InUnit)
-
-#            elif Extension == 'onv':
-#                EnvFile = make_file_name(FilePath, FileRoot, 'env')
-#                print(' EnvFile=', EnvFile)
-#                EnvUnit = next_unit_number()
-#                open_file(EnvUnit, EnvFile, 'write')
-#                write_env_header(EnvUnit, Station, TZ, Instrument, Barometer, Card,
-#                        BarometerToUse, CardForBarometer,
-#                        PCalDate[BarometerToUse][CardForBarometer], Anemometer,
-#                        WCalDate[Anemometer], LoggerVersion, Card, VCalDate[Card])
-#                Env, Eof = read_old_environment_record(Dbug[0], InUnit)
-#                while Eof == 0:
-#                    J = Barometer
-#                    K = Card
-#                    Pressure.Mean = PCoef0 + PCoef1 * Env.Pmean  # untested
-#                    Pressure.Min = Pressure.Mean - PCoef1 * Env.Pmin
-#                    Pressure.Max = Pressure.Mean + PCoef1 * Env.Pmax
-#                    Pressure.Sdev = PCoef1 * Env.Psdev
-#                    J = Card
-#                    Temperature.Mean = TCoef[0][J] + TCoef[1][J] * Env.Tmean
-#                    Temperature.Min = Temperature.Mean - TCoef[1][J] * Env.Tmin
-#                    Temperature.Max = Temperature.Mean + TCoef[1][J] * Env.Tmax
-#                    Temperature.Sdev = TCoef[1][J] * Env.Tsdev
-#                    J = Card
-#                    VBatt = VCoef[J][0] + VCoef[J][1] * Env.VBatt
-#
-#                    # Add Time zone offset (TZ=-10h for AEST)
-#                    DateTimeUTC = Env.DateTime + Date_Time(0, 0, 0, TZ.Hour, TZ.Minute, TZ.Second)
-#
-#                    # Add clock error.
-#                    # Negative error: Fast clock
-#                    # Positive error: Slow clock
-#                    # NB This convention differs from that used before October 2000
-#                    DateTimeUTC = DateTimeUTC + Date_Time(0, 0, 0, CE.Hour, CE.Minute, CE.Second)
-#
-#                    if Dbug[0]:
-#                        print('DateTimeLoc:', Env.DateTime)
-#                        print('DateTimeUTC:', DateTimeUTC)
-#                        halt()
-#
-#                    write_hpa_data(HpaUnit, DateTimeUTC, Pressure_UnTComp, Temperature.Mean,
-#                            DelPressure, Pressure.Mean)
-#
-#                    if Dbug[0]:
-#                        print('DateTimeLoc:', Env.DateTime)
-#                        print('DateTimeUTC:', DateTimeUTC)
-#                        print('Pressure:', Env.Pressure)
-#                        halt()
-#
-#                    WindV.Mean = -99.9
-#                    WindV.Min = -99.9
-#                    WindV.Max = -99.9
-#                    WindV.Sdev = -99.9
-#
-#                    WindD.Mean = -99.9
-#                    WindD.Min = -99.9
-#                    WindD.Max = -99.9
-#                    WindD.Sdev = -99.9
-#
-#                    write_env_data(EnvUnit, DateTimeUTC, Pressure, Temperature, WindV, WindD, VBatt)
-#
-#                    Env, Eof = read_old_environment_record(Dbug[0], InUnit)
-
-            else:
-                print('Extension ', Extension, ' not supported.')
-                halt()
-
-
-print('Done.')
-
+    else:
+        print(f'no {infile}')
+   
 
