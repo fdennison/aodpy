@@ -215,4 +215,4 @@ def elfit(N, W, X, Y):
     EA = math.sqrt((SWXX / DET) * (R / (N - 2)))
     ES = math.sqrt((SW / DET) * (R / (N - 2)))  
     
-    return A, S #, R, E, EA, ES
+    return A, S , R, E #, EA, ES

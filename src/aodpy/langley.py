@@ -8,16 +8,15 @@ from solpos_module import *
 import calfit_module as fit
 import atmos_module as atm
 
-import matplotlib.pyplot as plt
-
 pi = math.pi
 rad2deg = 180.0 / pi
 deg2rad = pi /180.0
 
 site = 'jb1'
 rootpath = '/home/599/fd0474/AODcode/SampleData/'
-startdate = dt.date(2016,1,1)
-enddate = dt.date(2016,1,30)
+startdate = dt.date(2015,6,2)  #
+enddate = dt.date(2016,6,13)   #
+verb=False
 
 calepoch = dt.date(2015,1,1)
 fitV0 = True
@@ -31,15 +30,20 @@ inst = config.CimelNumber
 numchannels = 10
 numlangleychannels = 9
 
+# Cut File
+calperiod_filename = str(inst) + str(startdate.year % 100).zfill(2) + str(startdate.month).zfill(2) + str(enddate.month).zfill(2)
+cut = pd.read_csv(rootpath + 'suncals/#' + str(inst) +'/#' + calperiod_filename + '.cut', skiprows=1, header=None, delimiter=r'\s+', 
+                 names=['year','month','day','AmPm'])
+cut['datetime'] = pd.to_datetime(cut[['year','month','day']])
+cut = cut.set_index('datetime')
+
 ## Use reference channel for regression QA?(F:870nm)
 #UseRefChannel4QA = True
 
 #Max sd of fit for regression (normally 0.005)
 MaxSdevFit = 0.005
 
-
 o3 = fr.read_bom_ozone2011(rootpath+'ozone/'+site+'.o3')
-
 
 i440 = 1 - 1
 i670 = 2 - 1
@@ -47,19 +51,31 @@ i870 = 3 - 1
 i1020 = 4 - 1
 iWV = 10 - 1
 
-
 datelist = pd.date_range(startdate,enddate,freq='d')  
-
-verb=False
 
 numlangleys=0
 dayssinceepoch=[]
+lnV0glob=[]
+ampm = ['Am','Pm']
 for dii in datelist:
     obsdate = pd.to_datetime(dii).date()
     if verb: print('----'+obsdate.strftime("%Y/%m/%d")+'----')
     filedir = site+'/#'+str(inst)+'/'+str(obsdate.year)+'/'+str(obsdate.month).zfill(2)+'/'+str(obsdate.day).zfill(2)+'/'
     fileroot = obsdate.strftime("%y%m%d")
-
+    
+    # photometer data
+    sunfile = rootpath+'agsdat/'+filedir+fileroot+'.sun'
+    if os.path.isfile(sunfile):
+        sundata = fr.read_triple_sun_record(sunfile, model)
+        startlocalday = dt.datetime.combine(obsdate,dt.time(4,0,0)) - dt.timedelta(hours=config.attrs['TimeZone'])
+        endlocalday = dt.datetime.combine(obsdate,dt.time(21,0,0)) - dt.timedelta(hours=config.attrs['TimeZone'])
+        n1=len(sundata)
+        sundata = sundata.loc[startlocalday:endlocalday]
+        nobs = len(sundata)
+    else:
+        print(f'no obs on {obsdate}')
+        continue
+    
     # get ozone for the day
     if sum(o3['date']==obsdate): # daily ozone available
         ozonecolumn =  (o3.loc[o3['date']==obsdate].ozone / 1000.0).iloc[0]
@@ -71,16 +87,10 @@ for dii in datelist:
 
     # Pressure data
     #presfile = rootpath + 'agsdat/' + filedir + fileroot + '.hpa'  # date formats will be different
-    presfile = rootpath + '/PyOut/' + config.attrs['Id'] + '/' + fileroot + '.hpa'
+    presfile = rootpath + 'PyOut/' + filedir  + fileroot + '.hpa'
     p = fr.read_pressure_file(presfile)
 
-    # photometer data
-    sundata = fr.read_triple_sun_record(rootpath+'agsdat/'+filedir+fileroot+'.sun', model)
-    startlocalday = dt.datetime.combine(obsdate,dt.time(4,0,0)) - dt.timedelta(hours=config.attrs['TimeZone'])
-    endlocalday = dt.datetime.combine(obsdate,dt.time(21,0,0)) - dt.timedelta(hours=config.attrs['TimeZone'])
-    n1=len(sundata)
-    sundata = sundata.loc[startlocalday:endlocalday]
-    nobs = len(sundata)
+
     #print(f'{n1} to {nobs} in sundata')
 
     # Black record
@@ -104,12 +114,11 @@ for dii in datelist:
     for k in range(nobs): 
         #print(f'[{j}]')
         rayleighOD = np.empty([numchannels])
-        #lnV0 = np.empty([numchannels])
         
         obs = sundata.iloc[k]
 
         datetime = dt.datetime.combine(obs['Date'] , obs['Time'])
-        if verb: print(datetime)
+        #if verb: print(datetime)
         
         if len(p)==0:
             pk = defaultpressure
@@ -124,7 +133,7 @@ for dii in datelist:
             DSunEarth=sunpos.DSunEarth
             solzen, solazi = satellite_position(julday, timeday, stationlat*deg2rad, stationlon*deg2rad, sun_elements)
             if i==1:
-                if (solazi*rad2deg)>180.0:
+                if (solazi*rad2deg)<180.0:
                     numsuntriples[1] +=1     #morning
                 else:
                     numsuntriples[2] +=1     #afternoon
@@ -153,9 +162,10 @@ for dii in datelist:
                     voltlog[k,i,n]=-9.99
 
     tripletmean = np.mean(volt, axis=1)
-    tripletCv = np.divide(np.std(volt, axis=1), tripletmean, out=np.ones_like(tripletmean)*99.99, where=tripletmean != 0)  * 100.0
+    tripletCv = np.divide(np.std(volt, axis=1, ddof=1), tripletmean, out=np.ones_like(tripletmean)*99.99, where=tripletmean != 0)  * 100.0
     
     if verb: print('Langley processing...')
+    if verb: print(f'N Sun Triples: {numsuntriples}')    
     nstart = [0,0]
     nend = [0,0]
     for iap in [1,2]:
@@ -170,11 +180,18 @@ for dii in datelist:
         rayleighOD = [atm.rayleigh(wl, pk) for wl in atm.wavelength[model-1]]
         
         # cutList
-        include=True
+        if dii in cut.index:
+            if ampm[iap] in cut.loc[dii].AmPm:
+                include=False
+                print(f'cut {obsdate} {ampm[iap]}')
+            else:
+                include=True
+        else:        
+            include=True
         
         if include:
             if numsuntriples[iap]>=MinSunTriples :
-                SpreadFlag, numOk, indOk = fit.CheckTripletCv(False, numsuntriples[iap+1], nstart[iap],airmass[:,1,i870],tripletCv[:,i870])                
+                SpreadFlag, numOk, indOk = fit.CheckTripletCv(verb, numsuntriples[iap+1], nstart[iap],airmass[:,1,i870],tripletCv[:,i870])                
                 
                 if (numOk>=MinSunTriples) & SpreadFlag :
                     if verb: print(' Passed triplet cv langley filter')
@@ -185,51 +202,53 @@ for dii in datelist:
                     X = np.empty([numOk*3,n])
                     Y = np.empty([numOk*3,n])
                     Z = np.empty([numOk*3,n])
-                    i=-1 # Singlet index        
+                    i=0 # Singlet index        
                     for k in range(numOk):              # Ok Triplet index
                         for j in range(3):                     # Triplet components
-                            i=i+1
                             X[i,:]=airmass[indOk[k],j,:]
                             Y[i,:]=voltlog[indOk[k],j,:]
-                      
+                            i=i+1
                     npts_ap=i
-                    #plt.plot(X,Y,'.')
-                    #plt.show()
 
-                    SpreadFlag,FitFlag, fitindex = fit.CheckFitQuality(False,npts_ap,X,Y,i870,MaxSdevFit)    
+                    SpreadFlag,FitFlag, fitindex = fit.CheckFitQuality(verb,npts_ap,X,Y,i870,MaxSdevFit)    
                     if SpreadFlag & FitFlag: 
-                        numlangleys += 1
+                        
                         weight = [1.0] * npts_ap
-                        intercept = [[]] * npts_ap
-                        slope = [[]] * npts_ap
+                        intercept = np.zeros(numchannels)  
+                        slope = np.zeros(numchannels) 
                         for n in range(numlangleychannels):
-                            intercept[n], slope[n] = boxfit(npts_ap,X,Y)
+                            intercept[n], slope[n], Residual, Erms, Delintercept, DelSlope = fit.boxfit(npts_ap,X[:,n],Y[:,n])
                             # correct intercept to 1 AU
                             intercept[n]=intercept[n] + 2.0*math.log(DSunEarth)
-                        lnV0glob[numlangleys,:]=intercept
+                        lnV0glob.append(intercept)
                         aerosolOD = -slope - rayleighOD - ozoneOD
                             
-                        angstrom = np.zeros(numlangleychannels,numlangleychannels)
-                        for N in range(numlangleychannels):
-                            for M in range(N, numlangleychannels):
+                        angstrom = np.zeros([numlangleychannels,numlangleychannels])
+                        for N in range(numlangleychannels-1):
+                            for M in range(N+1, numlangleychannels):
                                 if aerosolOD[N] >= 0 and aerosolOD[M] >= 0:
                                     angstrom[N, M] = -math.log(aerosolOD[N] / aerosolOD[M]) / \
-                                            math.log(wavelength[model-1][N] / wavelength[model-1][M])
+                                            math.log(atm.wavelength[model-1][N] / atm.wavelength[model-1][M])
                                 else:
                                     angstrom[N, M] = -9.999
 
-                        aeroosolOD[iWV] = aerosolOD[i870] * (atm.wavelength[model-1][iWV]/atm.wavelength[model-1][i870])**(-angstrom[i670,i870])
+                        aerosolOD[iWV] = aerosolOD[i870] * (atm.wavelength[model-1][iWV]/atm.wavelength[model-1][i870])**(-angstrom[i670,i870])
                         Bcoef=0.574
-                        U = X[:,iWV]**BCoef
-                        V  = Y[:,iWV] + X[:,iWV]*(rayleighOD[IVW]+aerosolOD[IVW])
+                        U = X[:,iWV]**Bcoef
+                        V  = Y[:,iWV] + X[:,iWV]*(rayleighOD[iWV]+aerosolOD[iWV])
                         weight = [1] * npts_ap
-                        intercept[iWV] = elfit(npts_ap,weight,U,V)
+                        intercept[iWV], slope[iWV], res, erms = fit.elfit(npts_ap,weight,U,V)
                         intercept[iWV] = intercept[iWV] + 2*math.log(DSunEarth)
                         if slope[iWV]<0:
-                            lnV0glob[numlangleys,iWV] = intercept[iWV]
+                            lnV0glob[numlangleys][iWV] = intercept[iWV]
                         else:
                             if verb: print('Water vapour below detection threshold')
                         dayssinceepoch.append((obs['Date'] - pd.Timestamp(calepoch)).days)    
+
+                        numlangleys += 1
+                        
+                        print(f'{obsdate} {ampm[iap]}')
+                            
                     else: # SpreadFlag & FitFlag:  
                         if verb: print(' Failed fit quality filter')
                 else:  # (numOk>=MinSunTriples) & SpreadFlag :
@@ -238,37 +257,39 @@ for dii in datelist:
                 if verb: print(f'insufficient triplets [{numsuntriples[iap]}]')
 
 print(f'{numlangleys} langleys')
+lnV0glob = np.vstack(lnV0glob)
+lnV0coef0 = np.zeros(numchannels)
+lnV0coef1 = np.zeros(numchannels)
+erms = np.zeros(numchannels)
+
 if numlangleys>0:
     if numlangleys>=2 & fitV0 :
         Iorder = 1
-        weight = [1] * numchannels
+        weight = [1] * numlangleys
         for n in range(numchannels):
-            lnV0conf0[n], lnV0coef1[n] = fit.elfit(numlangleys,weight,dayssinceepoch,lnV0glob[:,n])
+            lnV0coef0[n], lnV0coef1[n], res, erms[n] = fit.elfit(numlangleys,weight,dayssinceepoch,lnV0glob[:,n])
+        lnV0coef = np.vstack([lnV0coef0, lnV0coef1]) 
     else:
         Iorder = 0
-        lnV0conf0 = np.mean(lnV0glob, axis=0)
+        lnV0conf = np.mean(lnV0glob, axis=0)
     
-    calfile = rootpath+'PyOut/#' + str(inst) + str(startdate.year % 100).zfill(2) + str(startdate.month).zfill(2) + str(enddate.month).zfill(2)+'.lcl'
+    calfile = open(rootpath+'PyOut/' + site + '/' + calperiod_filename +'.lcl', 'w')
     calfile.write(f'# Calibration file generated from Langleys between:\n'
-           f'#{startdate.year:5d}{startdate.month:2d}{startdate.day:2d} and\n'
-           f'#{enddate.year:5d}{enddate.month:2d}{enddate.day:2d}\n'
-           f'#{Iinst:5d}        -- Instrument number\n'
+           f'#{startdate.year:5d}{startdate.month:3d}{startdate.day:3d} and\n'
+           f'#{enddate.year:5d}{enddate.month:3d}{enddate.day:3d}\n'
+           f'#{inst:5d}        -- Instrument number\n'
            f'#{model:5d}        -- Model number     \n'
            f'#{numlangleychannels:5d}        -- Number of Langley wavelengths\n'
            f'#{numlangleys:5d}        -- Number of Langley intervals in period\n'
-           f'#{numgeneralcycles:5d}        -- Number of General Method cycles applied\n'
-           f'#{calepoch}  -- Calibration epoch')
+           #f'#{numgeneralcycles:5d}        -- Number of General Method cycles applied\n'
+           f'#{calepoch}  -- Calibration epoch\n')
     
-    FormatString[5] = f'# Wavel(nm) Order {" ".join(f"LnV0({I})" for I in range(Iorder + 1))} Erms'
-    calfile.write(FormatString[5])
+    calfile.write(f'# Wavel(nm) Order      {" ".join(f"LnV0({I})   " for I in range(Iorder + 1))}     Erms\n')
     
-    for N in range(1, NumLangleyChannels[Model] + 1):
-       calfile.write(f'{Wavelength[N, Model]:10.1f} {IOrder:6d} ' +
-               ' '.join(f'{LnV0Coef[I, N]:13.5e}' for I in range(Iorder + 1)) +
-               f' {Erms[N]:13.5e}')
+    for N in range(numchannels):
+       calfile.write(f'{atm.wavelength[model-1][N]:10.1f} {Iorder:6d} ' +
+               ' '.join(f'{lnV0coef[I, N]:13.5e}' for I in range(Iorder + 1)) +
+               f' {erms[N]:13.5e}\n')
     
-       calfile.write(f'{Wavelength[IWV, Model]:10.1f} {IOrder:6d} ' +
-               ' '.join(f'{LnV0Coef[I, IWV]:13.5e}' for I in range(Iorder + 1)) +
-               f' {Erms[IWV]:13.5e}')
     
-    calfile.close()t
+    calfile.close()
