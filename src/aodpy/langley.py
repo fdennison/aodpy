@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import os as os
 import math
+from importlib import reload
 import fileread_module as fr
 from solpos_module import *
 import calfit_module as fit
@@ -14,6 +15,9 @@ deg2rad = pi /180.0
 
 site = 'jb1'
 rootpath = '/home/599/fd0474/AODcode/SampleData/'
+# startdate = dt.date(2015,11,18)  #2015,6,2
+# enddate = dt.date(2015,11,18)   #2016,6,13
+# verb=True
 startdate = dt.date(2015,6,2)  #
 enddate = dt.date(2016,6,13)   #
 verb=False
@@ -90,9 +94,6 @@ for dii in datelist:
     presfile = rootpath + 'PyOut/' + filedir  + fileroot + '.hpa'
     p = fr.read_pressure_file(presfile)
 
-
-    #print(f'{n1} to {nobs} in sundata')
-
     # Black record
     blkfile = rootpath+'agsdat/'+filedir+fileroot+'.blk'
     if os.path.isfile(blkfile):
@@ -114,6 +115,7 @@ for dii in datelist:
     for k in range(nobs): 
         #print(f'[{j}]')
         rayleighOD = np.empty([numchannels])
+        #lnV0 = np.empty([numchannels])
         
         obs = sundata.iloc[k]
 
@@ -124,6 +126,8 @@ for dii in datelist:
             pk = defaultpressure
         else:
             pk = p.asof(pd.Timestamp(datetime)).Pressure
+            if math.isnan(pk):   # before first pressure measurement use daily mean
+                pk = p.Pressure.mean()
         pr.append(pk)
         
         for i in range(3):
@@ -209,8 +213,10 @@ for dii in datelist:
                             Y[i,:]=voltlog[indOk[k],j,:]
                             i=i+1
                     npts_ap=i
+                    #plt.plot(X,Y,'.')
+                    #plt.show()
 
-                    SpreadFlag,FitFlag, fitindex = fit.CheckFitQuality(verb,npts_ap,X,Y,i870,MaxSdevFit)    
+                    SpreadFlag,FitFlag, fitindex, npts_ap = fit.CheckFitQuality(verb,npts_ap,X,Y,i870,MaxSdevFit)    
                     if SpreadFlag & FitFlag: 
                         
                         weight = [1.0] * npts_ap
@@ -257,7 +263,9 @@ for dii in datelist:
                 if verb: print(f'insufficient triplets [{numsuntriples[iap]}]')
 
 print(f'{numlangleys} langleys')
+
 lnV0glob = np.vstack(lnV0glob)
+
 lnV0coef0 = np.zeros(numchannels)
 lnV0coef1 = np.zeros(numchannels)
 erms = np.zeros(numchannels)
@@ -283,6 +291,7 @@ if numlangleys>0:
            f'#{numlangleys:5d}        -- Number of Langley intervals in period\n'
            #f'#{numgeneralcycles:5d}        -- Number of General Method cycles applied\n'
            f'#{calepoch}  -- Calibration epoch\n')
+    
     
     calfile.write(f'# Wavel(nm) Order      {" ".join(f"LnV0({I})   " for I in range(Iorder + 1))}     Erms\n')
     

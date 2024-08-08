@@ -3,10 +3,11 @@ import pandas as pd
 import numpy as np
 import os as os
 import math
+from importlib import reload
 import fileread_module as fr
 from solpos_module import *
-from calfit_module import *
-from atmos_module import *
+import calfit_module as fit
+import atmos_module as atm
 
 pi = math.pi
 rad2deg = 180.0 / pi
@@ -16,8 +17,15 @@ M_dryair = 2.8964e-02  # kg/mol
 
 site = 'jb1'
 rootpath = '/home/599/fd0474/AODcode/SampleData/'
-startdate = dt.date(2016,1,1)
-enddate = dt.date(2016,1,1)
+# startdate = dt.date(2015,11,18)  #2015,6,2
+# enddate = dt.date(2015,11,18)   #2016,6,13
+# verb=True
+startdate = dt.date(2015,6,2)  #
+enddate = dt.date(2016,6,13)   #
+verb=False
+
+calepoch = dt.date(2015,1,1)
+fitV0 = True
 
 configfile = rootpath+'config/'+site+'.cfn'
 config = fr.Read_Site_Configuration(configfile, startdate)
@@ -26,6 +34,13 @@ stationlon = config.attrs['Longitude'] #132.8931
 model = config.CimelModel
 inst = config.CimelNumber
 numchannels = 10
+
+# Cut File
+calperiod_filename = str(inst) + str(startdate.year % 100).zfill(2) + str(startdate.month).zfill(2) + str(enddate.month).zfill(2)
+cut = pd.read_csv(rootpath + 'suncals/#' + str(inst) +'/#' + calperiod_filename + '.cut', skiprows=1, header=None, delimiter=r'\s+', 
+                 names=['year','month','day','AmPm'])
+cut['datetime'] = pd.to_datetime(cut[['year','month','day']])
+cut = cut.set_index('datetime')
 
 # Use reference channel for regression QA?(F:870nm)
 UseRefChannel4QA = True
@@ -39,7 +54,7 @@ cal = fr.read_cal(rootpath+'suncals/'+calfile_in[0:3]+'/'+calfile_in)
 numlangleychannels = cal.attrs['numlangleychannels']
 
 iref = 3-1  #(3:870 7:500)
-caloutext = str(wavelength[model][iref])
+caloutext = f'.{atm.wavelength[model][iref]:3.0f}'
 
 o3 = fr.read_bom_ozone2011(rootpath+'ozone/'+site+'.o3')
 
@@ -50,47 +65,48 @@ i870 = 3 - 1
 i1020 = 4 - 1
 iWV = 10 - 1
 
-
-
-window = 2 # minutes
-CVmax = 0.01
 defaultpressure = 1013.0 # hPa
 
 datelist = pd.date_range(startdate,enddate,freq='d')  
 
-verb=False
+
 
 numlangleys=0
 dayssinceepoch=[]
+lnV0glob=[]
+ampm = ['Am','Pm']
 for dii in datelist:
     obsdate = pd.to_datetime(dii).date()
-    print('----'+obsdate.strftime("%Y/%m/%d")+'----')
+    if verb: print('----'+obsdate.strftime("%Y/%m/%d")+'----')
     filedir = site+'/#'+str(inst)+'/'+str(obsdate.year)+'/'+str(obsdate.month).zfill(2)+'/'+str(obsdate.day).zfill(2)+'/'
     fileroot = obsdate.strftime("%y%m%d")
 
+    # photometer data
+    sunfile = rootpath+'agsdat/'+filedir+fileroot+'.sun'
+    if os.path.isfile(sunfile):
+        sundata = fr.read_triple_sun_record(sunfile, model)
+        startlocalday = dt.datetime.combine(obsdate,dt.time(4,0,0)) - dt.timedelta(hours=config.attrs['TimeZone'])
+        endlocalday = dt.datetime.combine(obsdate,dt.time(21,0,0)) - dt.timedelta(hours=config.attrs['TimeZone'])
+        n1=len(sundata)
+        sundata = sundata.loc[startlocalday:endlocalday]
+        nobs = len(sundata)
+    else:
+        print(f'no obs on {obsdate}')
+        continue
+        
     # get ozone for the day
     if sum(o3['date']==obsdate): # daily ozone available
         ozonecolumn =  (o3.loc[o3['date']==obsdate].ozone / 1000.0).iloc[0]
     else: # use monthly mean
-        print('use monthly mean o3')
+        if verb: print('use monthly mean o3')
         o3m = o3.loc[(pd.to_datetime(o3['date']).dt.month==obsdate.month) & 
                      (pd.to_datetime(o3['date']).dt.year==obsdate.year)].ozone
         ozonecolumn = sum(o3m)/len(o3m) / 1000.0
 
     # Pressure data
     #presfile = rootpath + 'agsdat/' + filedir + fileroot + '.hpa'  # date formats will be different
-    presfile = rootpath + '/PyOut/' + config.attrs['Id'] + '/' + fileroot + '.hpa'
+    presfile = rootpath + 'PyOut/' + filedir  + fileroot + '.hpa'
     p = fr.read_pressure_file(presfile)
-
-
-    # photometer data
-    sundata = fr.read_triple_sun_record(rootpath+'agsdat/'+filedir+fileroot+'.sun', model)
-    startlocalday = dt.datetime.combine(obsdate,dt.time(4,0,0)) - dt.timedelta(hours=config.attrs['TimeZone'])
-    endlocalday = dt.datetime.combine(obsdate,dt.time(21,0,0)) - dt.timedelta(hours=config.attrs['TimeZone'])
-    n1=len(sundata)
-    sundata = sundata.loc[startlocalday:endlocalday]
-    nobs = len(sundata)
-    print(f'{n1} to {nobs} in sundata')
 
     # Black record
     blkfile = rootpath+'agsdat/'+filedir+fileroot+'.blk'
@@ -113,29 +129,21 @@ for dii in datelist:
     for k in range(nobs): 
         #print(f'[{j}]')
         rayleighOD = np.empty([numchannels])
-        #lnV0 = np.empty([numchannels])
-
 
         obs = sundata.iloc[k]
-        #print(obs)
 
         datetime = dt.datetime.combine(obs['Date'] , obs['Time'])
-        if verb: print(datetime)
         
         if len(p)==0:
             pr = defaultpressure
         else:
             pr = p.asof(pd.Timestamp(datetime)).Pressure
+            if math.isnan(pr):   # before first pressure measurement use daily mean
+                pr = p.Pressure.mean()
 
         # Cal File In
         nday = (obsdate - cal.attrs['epoch']).days
         lnV0ref_1AU = cal.iloc[iref].lnV0coef0 +  cal.iloc[iref].lnV0coef1 * nday
-        #numlangch = cal.attrs['numlangleychannels']
-        #lnV0ref_1AU=[0]*numchannels
-        #for n in range(numlangch):
-        #lnV0_1AU[n] = cal.iloc[n].lnV0coef0 +  cal.iloc[n].lnV0coef1 * nday   #
-        # n=iWV
-        # lnV0_1AU[n] = cal.iloc[n].lnV0coef0 +  cal.iloc[n].lnV0coef1 * nday # point of doing this channel seperately?
 
         
         for i in range(3):
@@ -145,25 +153,25 @@ for dii in datelist:
             DSunEarth=sunpos.DSunEarth
             solzen, solazi = satellite_position(julday, timeday, stationlat*deg2rad, stationlon*deg2rad, sun_elements)
             if i==1:
-                if (solazi*rad2deg)>180.0:
+                if (solazi*rad2deg)<180.0:
                     numsuntriples[1] +=1     #morning
                 else:
                     numsuntriples[2] +=1     #afternoon
             solzenapp[k,i] = apparent_zenith(solzen * rad2deg)
 
-            ozoneOD = [x*ozonecolumn for x in ozonecoef[model-1]]            
+            ozoneOD = [x*ozonecolumn for x in atm.ozonecoef[model-1]]            
 
             # Signal 
             for n in range(numchannels):
                 
                 volt[k,i,n] = obs['Ch'+str(n+1)][i] - blksun[n]
                 
-                rayleighOD[n] = rayleigh(wavelength[model-1][n], pr)           
+                rayleighOD[n] = atm.rayleigh(atm.wavelength[model-1][n], pr)           
 
                 #Assume aod of 0.03 to calculate airmass. Refine later.
-                airmassODrayleigh[k,i,n] = getairmass(1,solzenapp[k,i]) * rayleighOD[n]
-                airmassODaerosol[k,i,n] = getairmass(2,solzenapp[k,i]) * 0.03
-                airmassODozone[k,i,n] = getairmass(3,solzenapp[k,i]) * ozoneOD[n]
+                airmassODrayleigh[k,i,n] = atm.getairmass(1,solzenapp[k,i]) * rayleighOD[n]
+                airmassODaerosol[k,i,n] = atm.getairmass(2,solzenapp[k,i]) * 0.03
+                airmassODozone[k,i,n] = atm.getairmass(3,solzenapp[k,i]) * ozoneOD[n]
                 airmass[k,i,n] = ( airmassODrayleigh[k,i,n] + airmassODaerosol[k,i,n] + airmassODozone[k,i,n]) \
                                 / (rayleighOD[n] + 0.03 + ozoneOD[n])       
 
@@ -173,99 +181,137 @@ for dii in datelist:
                 else:
                     voltlog[k,i,n]=-9.99        
     
-    tripletCv = np.std(volt, axis=1) / np.mean(volt, axis=1)
-    np.nan_to_num(tripletCv, copy=False, nan=99.99)
+    tripletmean = np.mean(volt, axis=1)
+    tripletCv = np.divide(np.std(volt, axis=1, ddof=1), tripletmean, out=np.ones_like(tripletmean)*99.99, where=tripletmean != 0)  * 100.0
     
-    print('General method, processing...')
+    if verb: print('General method, processing...')
     nstart = [0,0]
     nend = [0,0]
     for iap in [1,2]:
         nstart[iap-1] = numsuntriples[1] * (iap - 1)
         nend[iap-1] = nstart[iap-1] + numsuntriples[iap]
-    print(f'total:{numsuntriples[0]} triples, {numsuntriples[1]} am [{nstart[0]}:{nend[0]}], {numsuntriples[2]} pm [{nstart[1]}:{nend[1]}]')
+    if verb: print(f'total:{numsuntriples[0]} triples, {numsuntriples[1]} am [{nstart[0]}:{nend[0]}], {numsuntriples[2]} pm [{nstart[1]}:{nend[1]}]')
     
     lnV0ref=lnV0ref_1AU-2.0*math.log(DSunEarth)
     MinSunTriples = 10
     for iap in [0,1]: #  morning / afternoon
         
         # cutList
-        include=True
+        if dii in cut.index:
+            if ampm[iap] in cut.loc[dii].AmPm:
+                include=False
+                print(f'cut {obsdate} {ampm[iap]}')
+            else:
+                include=True
+        else:        
+            include=True
         
         if include:
             if numsuntriples[iap]>=MinSunTriples :
-                SpreadFlag, numOk, indOk = CheckTripletCv(True, numsuntriples[iap+1], nstart[iap],airmass[:,1,i870],tripletCv[:,i870])
-
-                
-                
+                SpreadFlag, numOk, indOk = fit.CheckTripletCv(verb, numsuntriples[iap+1], nstart[iap],airmass[:,1,i870],tripletCv[:,i870])
+              
                 if (numOk>=MinSunTriples) & SpreadFlag :
-                    print(' Passed triplet cv langley filter')
+                    if verb: print(' Passed triplet cv langley filter')
 
-                n=numchannels
-                V = np.empty([numOk*3])
-                W = np.empty([numOk*3])
-                X = np.empty([numOk*3,n])
-                Y = np.empty([numOk*3,n])
-                Z = np.empty([numOk*3,n])
-                i=-1 # Singlet index        
-                for k in range(numOk):              # Ok Triplet index
-                    for j in range(3):                     # Triplet components
-                        i=i+1
-                        X[i,:]=airmass[indOk[k],j,:]
-                        Y[i,:]=voltlog[indOk[k],j,:]
-                        #V=Aerosol airmass
-                        V[i]=getairmass(2,solzenapp[indOk[k],j])
-                        #W=m*aod at reference wavelength
-                        W[i]=lnV0ref - voltlog[indOk[k],j,iref] - airmassODrayleigh[indOk[k],j,iref] - airmassODozone[indOk[k],j,iref]
-                        #Z=Dependent variable for regression
-                        Z[i,:]=voltlog[indOk[k],j,:] + airmassODrayleigh[indOk[k],j,:] + airmassODozone[indOk[k],j,:]
+                    n=numchannels
+                    V = np.empty([numOk*3])
+                    W = np.empty([numOk*3])
+                    X = np.empty([numOk*3,n])
+                    Y = np.empty([numOk*3,n])
+                    Z = np.empty([numOk*3,n])
+                    i=0 # Singlet index        
+                    for k in range(numOk):              # Ok Triplet index
+                        for j in range(3):                     # Triplet components                      
+                            X[i,:]=airmass[indOk[k],j,:]
+                            Y[i,:]=voltlog[indOk[k],j,:]
+                            #V=Aerosol airmass
+                            V[i]=atm.getairmass(2,solzenapp[indOk[k],j])
+                            #W=m*aod at reference wavelength
+                            W[i]=lnV0ref - voltlog[indOk[k],j,iref] - airmassODrayleigh[indOk[k],j,iref] - airmassODozone[indOk[k],j,iref]
+                            #Z=Dependent variable for regression
+                            Z[i,:]=voltlog[indOk[k],j,:] + airmassODrayleigh[indOk[k],j,:] + airmassODozone[indOk[k],j,:]
+                            i=i+1
+                    npts_ap=i
 
-                npts_ap=i
-
-        #         Until 19/12/2011 this used i870 as the reference channel,
-        #         on the thinking that data quality should scale
-        #         proportionally between channels.
-        #         However the case of la1 #1 1999 07 20 am and 1999 08 01 am
-        #         showed up two cases where the 500nm channel had problems
-        #         that were not in the 870 or 670 channels. 
-
-        #         In this version (21/12/2011) the user is given the option 
-        #         of selecting either the actual reference channel or the
-        #         870nm channel (for historical compatibility).                        
-                if  UseRefChannel4QA:
-                    QARef=iref
-                else: 
-                    QARef=i870
-
-                SpreadFlag,FitFlag,indOk = CheckFitQuality(False,npts_ap,X,Y,QARef,MaxSdevFit)
-                
-                V=V[indOk]
-                W=W[indOk]
-                Z=Z[indOk,:] 
-
-                if SpreadFlag & FitFlag: 
-                    numlangleys += 1
-                    weight = [1.0] * npts_ap
-                    for n in range(numlangleychannels):
-                        intercept, slope = elfit(npts_ap,weight,w,z)
-                        # correct intercept to 1 AU
-                        intercept[iap,n]=intercept[iap,n] + 2.0*math.log(DSunEarth)
-                        lnV0glob[numLangleys,n]=intercept[iap,n]
-                    dayssinceepoch.append(CalDay)    
-                else:
-                    print(' Failed fit quality filter')
-            else:
-                print('insufficient triplets')
-        # end of day loop
-            
-#if iorder(i870)==1:
-weight = [1.0] * numlangleys
-for n in range(numlangleychannels):
-    lnV0coef0, lnV0coef1 = elfit(numlangleys,weight, dayssinceepoch, lnV0glob)
-
-lnV0coef0[iWV] = lnV0coef0_in[iWV]    
-lnV0coef1[iWV] = lnV0coef1_in[iWV]
+            #         Until 19/12/2011 this used i870 as the reference channel,
+            #         on the thinking that data quality should scale
+            #         proportionally between channels.
+            #         However the case of la1 #1 1999 07 20 am and 1999 08 01 am
+            #         showed up two cases where the 500nm channel had problems
+            #         that were not in the 870 or 670 channels. 
     
+            #         In this version (21/12/2011) the user is given the option 
+            #         of selecting either the actual reference channel or the
+            #         870nm channel (for historical compatibility).                        
+                    if  UseRefChannel4QA:
+                        QARef=iref
+                    else: 
+                        QARef=i870
+    
+                    SpreadFlag,FitFlag,indOk,npts_ap = fit.CheckFitQuality(verb,npts_ap,X,Y,QARef,MaxSdevFit)
+                    
+                    V=V[indOk]
+                    W=W[indOk]
+                    Z=Z[indOk,:] 
+    
+                    if SpreadFlag & FitFlag: 
+                        if verb: print(' Passed fit quality filter')
+                        weight = [1.0] * npts_ap
+                        intercept = np.zeros(numchannels)  
+                        slope = np.zeros(numchannels)
+                        for n in range(numlangleychannels):
+                            intercept[n], slope[n], res, erms = fit.elfit(npts_ap,weight,W,Z[:,n])
+                            # correct intercept to 1 AU
+                            intercept[n] = intercept[n] + 2.0*math.log(DSunEarth)
+                        lnV0glob.append(intercept)
+                        dayssinceepoch.append((obs['Date'] - pd.Timestamp(calepoch)).days)
 
-#  YearMin/.. - YearMax/...
-# instr, Model, numLangleyChannels, numLangley, CalGeneralCycles+1, CalEpoch 
-# wavel   iorder  LnV0Coef(1:iorder)
+                        numlangleys += 1
+                        print(f'{obsdate} {ampm[iap]}')
+                        
+                    else:
+                        if verb: print(' Failed fit quality filter')
+                else:
+                    if verb: print(' Failed triplet cv filter') 
+            else:
+                if verb: print(' Insufficient triplets')
+
+        
+lnV0glob = np.vstack(lnV0glob)
+
+lnV0coef0 = np.zeros(numchannels)
+lnV0coef1 = np.zeros(numchannels)
+erms = np.zeros(numchannels)
+
+if cal.order[i870]==1 :
+    weight = [1] * numlangleys
+    for n in range(numchannels):
+        lnV0coef0[n], lnV0coef1[n], res, erms[n] = fit.elfit(numlangleys,weight,dayssinceepoch,lnV0glob[:,n])
+    lnV0coef0[iWV] = cal.lnV0coef0[iWV]
+    lnV0coef1[iWV] = cal.lnV0coef1[iWV]
+    lnV0coef = np.vstack([lnV0coef0, lnV0coef1]) 
+    erms[iWV] = cal.erms[iWV]
+else:
+    lnV0conf = np.mean(lnV0glob, axis=0)
+    lnV0coef.append(cal.lnV0coef0[iWV])
+    
+calfile = open(rootpath+'PyOut/' + site + '/' + calperiod_filename + caloutext, 'w')
+calfile.write(f'# Calibration file generated from General Method between:\n'
+       f'#{startdate.year:5d}{startdate.month:3d}{startdate.day:3d} and\n'
+       f'#{enddate.year:5d}{enddate.month:3d}{enddate.day:3d}\n'
+       f'#{inst:5d}        -- Instrument number\n'
+       f'#{model:5d}        -- Model number     \n'
+       f'#{numlangleychannels:5d}        -- Number of Langley wavelengths\n'
+       f'#{numlangleys:5d}        -- Number of Langley intervals in period\n'
+       #f'#{numgeneralcycles:5d}        -- Number of General Method cycles applied\n'
+       f'#{calepoch}  -- Calibration epoch\n')
+
+
+calfile.write(f'# Wavel(nm) Order      {" ".join(f"LnV0({i})   " for i in range(cal.order[0] + 1))}     Erms\n')
+
+for n in range(numchannels):
+   calfile.write(f'{atm.wavelength[model-1][n]:10.1f} {cal.order[n]:6d} ' +
+           ' '.join(f'{lnV0coef[i, n]:13.5e}' for i in range(cal.order[n] + 1)) +
+           f' {erms[n]:13.5e}\n')
+
+calfile.close()

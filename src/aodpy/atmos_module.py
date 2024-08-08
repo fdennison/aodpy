@@ -1,3 +1,13 @@
+import math
+pi = math.pi
+rad2deg = 180.0 / pi
+deg2rad = pi /180.0
+avogadro = 6.022529e+23  # mol^{-1}
+M_dryair = 2.8964e-02  # kg/mol
+earthrad = 6370.0 #km
+gravity = 9.80665  # ms^{-2}, standard value
+
+
 def getairmass(idx, appsolzen):
     #Finds airmass components given apparent solar zenith angle in degrees.
     #     Based on Forgan 1988, Appl Opt 27, 2546-2548.

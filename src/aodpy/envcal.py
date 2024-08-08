@@ -8,7 +8,7 @@ import fileread_module as fr
 site = 'jb1'
 rootpath = '/home/599/fd0474/AODcode/SampleData/'
 startdate = dt.date(2015,6,2)
-enddate = dt.date(2016,6,30)
+enddate = dt.date(2016,6,13)
 
 #Logger clock error (+ve for slow) 
 ce=dt.timedelta(hours=0,minutes=0,seconds=0)
@@ -20,7 +20,7 @@ stationlon = config.attrs['Longitude'] #132.8931
 model = config.CimelModel
 inst = config.CimelNumber
 card = config.Card
-loggerversion = 'v' + str(config.Version).zfill(1)i
+loggerversion = 'v' + str(config.Version).zfill(1)
 
 def write_env_header(filename, Station, TZ, Instrument, Barometer, Card, BaroCal, CardforBarometer,
                      BaroCalDate, Anemometer, WCalDate, LoggerVersion, VCalDate):

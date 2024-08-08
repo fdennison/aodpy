@@ -123,15 +123,6 @@ def solar_position_almanac(jul_day, tim_day):
 
     return data
 
-def put_in_range(x, y):
-    """Ensures that x ends up in the range (0, y) by incrementing in units of y"""
-    if x < 0.0:
-        while x < 0.0:
-            x = x + y
-    if x >= y:
-        while x >= y:
-            x = x - y
-    return x
 
 def julian(epoch):
     """
@@ -203,7 +194,7 @@ default_elements = OrbitalElements()
 greenwich_elements = OrbitalElements(
     semi_maj_ax=1.0, period=0.997269566340, anom_period=0.997269566340,
     #epoch=(1988, 1, 0, 17, 21, 35, 354)
-    epoch=dt.datetime(1988,1,1,17,21,35,354)
+    epoch=dt.datetime(1988,1,1,17,21,35,354) - dt.timedelta(days=1)
 )
 
 sun_elements = OrbitalElements(
@@ -211,7 +202,7 @@ sun_elements = OrbitalElements(
     inc=0.409120047e+00, arg_perigee=0.493460338e+01, period=0.365259635e+03,
     anom_period=0.365259635e+03, prec_perigee=0.000000822e+00, 
     #epoch=(1988, 1, 0, 0, 0, 0, 0)
-    epoch=dt.datetime(1988,1,1,0,0,0,0) 
+    epoch=dt.datetime(1988,1,1,0,0,0,0) - dt.timedelta(days=1)
 )
 greenwich_elements.jul, greenwich_elements.day = julian(greenwich_elements.epoch)
 sun_elements.jul, sun_elements.day = julian(sun_elements.epoch)

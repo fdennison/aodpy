@@ -24,12 +24,12 @@ def Read_Site_Configuration(filename, ObsDate):
         Height = float(f.readline().rstrip().split()[0])
         TimeZone = float(f.readline().rstrip().split()[0])
     Config.attrs = {'Name':Name, 'BoMNumber':BoMNumber, 'Id':Id, 'Latitude':float(lat), 'Longitude':float(lon), 'Height':Height, 'TimeZone':TimeZone}
-    pre_obs = [i for i,x in enumerate(Config['StartDate']) if (x<ObsDate)]  #
+    pre_obs = [i for i,x in enumerate(Config['StartDate']) if (x<=ObsDate)]  #
     if not pre_obs : #empty
         print('could not find appropriate date')
     else:
         ConfigOut = Config.iloc[pre_obs[-1]]
-        print(ConfigOut)
+        #print(ConfigOut)
         return ConfigOut
 
 def dateint2dateclass(d):
@@ -45,13 +45,25 @@ def read_pressure_file(presfile):
     p['DateTime'] = pd.to_datetime(p['Date'] + ' ' + p['Time'])
     p = p.set_index('DateTime')
     if np.any(np.diff(p.index.to_list())<dt.timedelta(hours=0)): 
+        print(f'time disordered in pressure file: {presfile}')
+        p.sort_index(inplace=True)       # jb1 160105 has a dicontinuity, indicate problem?
+    if len(p)==0:
+        print(f'problem with pressure file: {presfile}')
+    return p    
+    
+def read_old_pressure_file(presfile):
+    prescolumnnames=['y','m','d','H','M','S','P_UnTCorrect','Tmean','DelP','Pressure']
+    p = pd.read_csv(presfile, skiprows=9, header=None, delimiter=r'\s+', names=prescolumnnames, index_col=False)
+    #p['DateTime'] = pd.to_datetime(p['Date'] + ' ' + p['Time'])
+    p['DateTime'] = [dt.datetime(y,m,d,H,M,S) for y,m,d,H,M,S in zip(p['y'],p['m'],p['d'],p['H'],p['M'],p['S'])]
+    p = p.set_index('DateTime')
+    if np.any(np.diff(p.index.to_list())<dt.timedelta(hours=0)): 
         print('time disordered in pressure file')
         p.sort_index(inplace=True)       # jb1 160105 has a dicontinuity, indicate problem?
     if len(p)==0:
         print('problem with pressure file')
-    return p    
+    return p  
     
-
 IWV=10
 I1020=4
 minsignal=50
@@ -110,11 +122,12 @@ def read_triple_sun_record(filename, Model):
     s['Time'] = s[1].apply(lambda x: dt.datetime.strptime(x,'%H:%M:%S').time())
     s['DateTime'] = [dt.datetime.combine(d,t) for d,t in zip(s['Date'],s['Time'])]
     s = s.set_index('DateTime')
-    s['allchan'] = s[range(2,32)].to_numpy().tolist()
+    
     for ii,ch in enumerate(order):
         name='Ch{}'.format(ch)
         s[name] = [[x,y,z] for x,y,z in zip(s[ii+2], s[ii+12], s[ii+22])] # not work for n=/=10
-        
+
+    s['allchan'] = s.loc[:, 2:22].to_numpy().tolist() 
     s['Low'] = s['allchan'].apply(checklowsignal)
     s['High'] = s['allchan'].apply(checkhighsignal)
     # s['wvLow'] = 0; s.loc[s['Ch'+str(IWV)] < minsignal, 'wvLow'] == 101
@@ -125,7 +138,7 @@ def read_triple_sun_record(filename, Model):
     
     s['RawSignal1020'] = s['Ch'+str(I1020)]
     s['Ch'+str(I1020)] = [adjust1020_trip(x,y) for x,y in zip (s['Ch'+str(I1020)],s['Temperature'])]        
-    
+    s['allchan'] = s[range(2,32)].to_numpy().tolist()
     return s
 
 
@@ -144,15 +157,18 @@ def read_single_sun_record(filename, Model):
         order = [4,3,2,1,5,7,10,6,8]
   
     s = pd.read_csv(filename, header=None)
-    s.rename(columns={12:'Temperature'}, inplace=True)
-    s['Date'] = s[0].apply(lambda x: dt.datetime.strptime(x,'%d:%m:%y').date())
-    s['Time'] = s[1].apply(lambda x: dt.datetime.strptime(x,'%H:%M:%S').time())
-    s['DateTime'] = [dt.datetime.combine(d,t) for d,t in zip(s['Date'],s['Time'])]
+    s.rename(columns={0:'Date',1:'Time',12:'Temperature'}, inplace=True)
+    #s['Date'] = s[0].apply(lambda x: dt.datetime.strptime(x,'%d:%m:%y').date())
+    #s['Time'] = s[1].apply(lambda x: dt.datetime.strptime(x,'%H:%M:%S').time())
+    s['DateTime'] = [dt.datetime.combine(dt.datetime.strptime(d,'%d:%m:%y').date(),dt.datetime.strptime(t,'%H:%M:%S').time()) for d,t in zip(s['Date'],s['Time'])]
     s = s.set_index('DateTime')    
-    s['allchan'] = s[[2,3,4,5,6,7,8,9,10,11]].to_numpy().tolist()
+    
     for ii,ch in enumerate(order):
         s.rename(columns={(ii+2):('Ch{}'.format(ch))}, inplace=True)
-  
+        
+    s['RawSignal1020'] = s['Ch'+str(I1020)]
+    s['Ch'+str(I1020)] = [adjust1020(x,y) for x,y in zip (s['Ch'+str(I1020)],s['Temperature'])]
+    s['allchan'] = s.loc[:, s.columns.str.startswith('Ch')].to_numpy().tolist()  
     s['Low'] = s['allchan'].apply(checklowsignal)
     s['High'] = s['allchan'].apply(checkhighsignal)
     s['wvLow'] = 0; s.loc[s['Ch'+str(IWV)] < minsignal, 'wvLow'] == 101
@@ -160,9 +176,6 @@ def read_single_sun_record(filename, Model):
     s['tempLow'] = 0; s.loc[s['Temperature'] < mintemp, 'tempLow'] == 12
     s['tempHigh'] = 0; s.loc[s['Temperature'] > maxtemp, 'tempHigh'] == 12
     s['Valid'] = s[['Low','High','wvLow','wvHigh','tempLow','tempHigh']].sum(axis=1)
-    
-    s['RawSignal1020'] = s['Ch'+str(I1020)]
-    s['Ch'+str(I1020)] = [adjust1020(x,y) for x,y in zip (s['Ch'+str(I1020)],s['Temperature'])]
     
     return s
 

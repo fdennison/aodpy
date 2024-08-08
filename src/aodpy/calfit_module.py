@@ -27,14 +27,14 @@ def CheckTripletCv(Dbug, numPoints, nstart, Airmass, CoVar):
                 print("Array overflow, airmass too big!")
                 print("inT(Airmass)   :", j)
                 print("Max Airmass    :", MaxAirmass)
-                halt()
             numPtsUnitAirmass[j] += 1
 
     SpreadFlag = True
     for j in range(MinAirmass, MaxAirmass):
         if numPtsUnitAirmass[j] < MinPtsUnitAirmass:
             SpreadFlag = False
-            print("insufficient points in airmass interval", j)
+            if Dbug:
+                print("insufficient points in airmass interval", j)
 
     if Dbug:
         print("numOk    ", numOk)
@@ -65,7 +65,7 @@ def CheckFitQuality(Dbug, numPoints, X, Y, nref, MaxSdevFit):
     
     MinAirmass = 2
     MaxAirmass = 6
-    MinPtsUnitAirmass = 4
+    MinPtsUnitAirmass = 4 
     index=[]
     n = nref
     intercept, Slope, Residual, Erms, Delintercept, DelSlope = boxfit(numPoints, X[:, n], Y[:, n])
@@ -92,17 +92,17 @@ def CheckFitQuality(Dbug, numPoints, X, Y, nref, MaxSdevFit):
             k = int(X[i - 1, nref])
             numPtsUnitAirmass[k] += 1
         else:
-            print("Rejecting point, am=:", X[j, nref], "LnV=", Y[j, nref], "Error=", Error, "1.5sigma=", 1.5 * Erms)
+            if Dbug: print("Rejecting point, am=:", X[j, nref], "LnV=", Y[j, nref], "Error=", Error, "1.5sigma=", 1.5 * Erms)
 
-    print("Points satisfying Pass 1 test=", numPoints)
+    if Dbug: print("Points satisfying Pass 1 test=", numPoints)
     numPoints = i
-    print("Points satisfying Pass 2 test=", numPoints)
+    if Dbug: print("Points satisfying Pass 2 test=", numPoints)
 
     SpreadFlag = True
     for j in range(MinAirmass, MaxAirmass):
         if numPtsUnitAirmass[j] < MinPtsUnitAirmass:
             SpreadFlag = False
-            print("insufficient points in airmass interval", j)
+            if Dbug: print("insufficient points in airmass interval", j)
 
     if Dbug:
         for j in range(1, 7):
@@ -119,17 +119,17 @@ def CheckFitQuality(Dbug, numPoints, X, Y, nref, MaxSdevFit):
             print("Delintercept      ", Delintercept)
             print("DelSlope          ", DelSlope)
 
-        print("Erms              ", Erms)
-        print("MaxSdevFit        ", MaxSdevFit)
+        if Dbug: print("Erms              ", Erms)
+        if Dbug: print("MaxSdevFit        ", MaxSdevFit)
         if Erms < MaxSdevFit:
             FitFlag = True
         else:
             FitFlag = False
-            print("FitFlag set false because standard deviation=", Erms)
+            if Dbug: print("FitFlag set false because standard deviation=", Erms)
     else:
         FitFlag = False
         
-    return  SpreadFlag, FitFlag, index
+    return  SpreadFlag, FitFlag, index, numPoints
 
 
 def boxfit(n, X, Y):    
