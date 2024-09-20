@@ -3,61 +3,55 @@ import pandas as pd
 import numpy as np
 import os as os
 import math
-from importlib import reload
 import fileread_module as fr
-from solpos_module import *
+import solpos_module as sol
 import calfit_module as fit
 import atmos_module as atm
+import tomllib
 
 pi = math.pi
 rad2deg = 180.0 / pi
 deg2rad = pi /180.0
-avogadro = 6.022529e+23  # mol^{-1}
-M_dryair = 2.8964e-02  # kg/mol
 
-site = 'jb1'
-rootpath = '/home/599/fd0474/AODcode/SampleData/'
-# startdate = dt.date(2015,11,18)  #2015,6,2
-# enddate = dt.date(2015,11,18)   #2016,6,13
-# verb=True
-startdate = dt.date(2015,6,2)  #
-enddate = dt.date(2016,6,13)   #
-verb=False
-
-calepoch = dt.date(2015,1,1)
-fitV0 = True
+# langley config options
+with open("/g/data/p66/fd0474/notebooks/AOD/config.toml", "rb") as f:
+    genconf = tomllib.load(f)
+print(genconf)      
+site = genconf['site']
+rootpath = genconf['rootpath']
+startdate = genconf['startdate']
+enddate = genconf['enddate']
+calepoch = genconf['gencal']['calepoch']
+fitV0 = genconf['gencal']['fitV0']
+clockfix = genconf['gencal']['clockfix']
+MaxSdevFit = genconf['gencal']['MaxSdevFit']
+UseRefChannel4QA = genconf['gencal']['UseRefChannel4QA']
+calfile_in =  genconf['gencal']['calfile_in']
+refchan = genconf['gencal']['refchannel']
 
 configfile = rootpath+'config/'+site+'.cfn'
-config = fr.Read_Site_Configuration(configfile, startdate)
+config = fr.read_site_configuration(configfile, startdate)
 stationlat = config.attrs['Latitude'] #-12.6607
 stationlon = config.attrs['Longitude'] #132.8931
 model = config.CimelModel
 inst = config.CimelNumber
 numchannels = 10
 
-# Cut File
+caloutext = '.'+str(refchan)
+iref = atm.wavelength[model-1].index(refchan)
+
 calperiod_filename = str(inst) + str(startdate.year % 100).zfill(2) + str(startdate.month).zfill(2) + str(enddate.month).zfill(2)
-cut = pd.read_csv(rootpath + 'suncals/#' + str(inst) +'/#' + calperiod_filename + '.cut', skiprows=1, header=None, delimiter=r'\s+', 
-                 names=['year','month','day','AmPm'])
-cut['datetime'] = pd.to_datetime(cut[['year','month','day']])
-cut = cut.set_index('datetime')
 
-# Use reference channel for regression QA?(F:870nm)
-UseRefChannel4QA = True
+cut = fr.read_adj_file(rootpath + 'suncals/#' + str(inst) +'/#' + calperiod_filename + '.cut', 'AmPm')
 
-#Max sd of fit for regression (normally 0.005)
-MaxSdevFit = 0.005
+if clockfix: clk = fr.read_adj_file(rootpath + 'suncals/#' + str(inst) +'/#' + calperiod_filename + '.clk', 'timecorr')
 
-calfile_in = '#12150606.lcl'
-#calfile_in = '#'str(config.instrument)+startdate.strftime("%y%m") + enddate.strftime("%m") + '.lcl'
+verb=False
+
 cal = fr.read_cal(rootpath+'suncals/'+calfile_in[0:3]+'/'+calfile_in)
 numlangleychannels = cal.attrs['numlangleychannels']
 
-iref = 3-1  #(3:870 7:500)
-caloutext = f'.{atm.wavelength[model][iref]:3.0f}'
-
 o3 = fr.read_bom_ozone2011(rootpath+'ozone/'+site+'.o3')
-
 
 i440 = 1 - 1
 i670 = 2 - 1
@@ -67,14 +61,13 @@ iWV = 10 - 1
 
 defaultpressure = 1013.0 # hPa
 
-datelist = pd.date_range(startdate,enddate,freq='d')  
-
-
-
+numgencyc = 0
 numlangleys=0
 dayssinceepoch=[]
 lnV0glob=[]
 ampm = ['Am','Pm']
+datelist = pd.date_range(startdate,enddate,freq='d')  
+
 for dii in datelist:
     obsdate = pd.to_datetime(dii).date()
     if verb: print('----'+obsdate.strftime("%Y/%m/%d")+'----')
@@ -116,7 +109,13 @@ for dii in datelist:
     else:
         blksun = [0] * numchannels
 
+    # Cal File In
+    nday = (obsdate - cal.attrs['epoch']).days
+    lnV0ref_1AU = cal.iloc[iref].lnV0coef0 +  cal.iloc[iref].lnV0coef1 * nday
     
+    # Clock Fix
+    if clockfix:  timecorr = round(clk.asof(dii).timecorr)
+        
     volt = np.zeros([nobs,3,numchannels])
     voltlog = np.empty([nobs,3,numchannels])
     airmass  = np.empty([nobs,3,numchannels])
@@ -133,31 +132,27 @@ for dii in datelist:
         obs = sundata.iloc[k]
 
         datetime = dt.datetime.combine(obs['Date'] , obs['Time'])
-        
+        if clockfix: datetime = datetime - dt.timedelta(seconds=timecorr)
+            
         if len(p)==0:
             pr = defaultpressure
         else:
             pr = p.asof(pd.Timestamp(datetime)).Pressure
             if math.isnan(pr):   # before first pressure measurement use daily mean
                 pr = p.Pressure.mean()
-
-        # Cal File In
-        nday = (obsdate - cal.attrs['epoch']).days
-        lnV0ref_1AU = cal.iloc[iref].lnV0coef0 +  cal.iloc[iref].lnV0coef1 * nday
-
         
         for i in range(3):
         # Solar Position
-            julday, timeday = julian(datetime+dt.timedelta(seconds=(30*i)))            
-            sunpos = solar_position_almanac(julday,timeday)   
-            DSunEarth=sunpos.DSunEarth
-            solzen, solazi = satellite_position(julday, timeday, stationlat*deg2rad, stationlon*deg2rad, sun_elements)
+            julday, timeday = sol.julian(datetime+dt.timedelta(seconds=(30*i)))            
+            sunpos = sol.solar_position_almanac(julday,timeday)   
+            if (i==0) & (k==0): DSunEarth=sunpos.DSunEarth
+            solzen, solazi = sol.satellite_position(julday, timeday, stationlat*deg2rad, stationlon*deg2rad, sol.sun_elements)
             if i==1:
                 if (solazi*rad2deg)<180.0:
                     numsuntriples[1] +=1     #morning
                 else:
                     numsuntriples[2] +=1     #afternoon
-            solzenapp[k,i] = apparent_zenith(solzen * rad2deg)
+            solzenapp[k,i] = sol.apparent_zenith(solzen * rad2deg)
 
             ozoneOD = [x*ozonecolumn for x in atm.ozonecoef[model-1]]            
 
@@ -276,7 +271,6 @@ for dii in datelist:
             else:
                 if verb: print(' Insufficient triplets')
 
-        
 lnV0glob = np.vstack(lnV0glob)
 
 lnV0coef0 = np.zeros(numchannels)
@@ -295,7 +289,8 @@ else:
     lnV0conf = np.mean(lnV0glob, axis=0)
     lnV0coef.append(cal.lnV0coef0[iWV])
     
-calfile = open(rootpath+'PyOut/' + site + '/' + calperiod_filename + caloutext, 'w')
+genfile = rootpath+'PyOut/' + site + '/suncal/' + calperiod_filename + caloutext
+calfile = open(genfile, 'w')
 calfile.write(f'# Calibration file generated from General Method between:\n'
        f'#{startdate.year:5d}{startdate.month:3d}{startdate.day:3d} and\n'
        f'#{enddate.year:5d}{enddate.month:3d}{enddate.day:3d}\n'
@@ -303,7 +298,7 @@ calfile.write(f'# Calibration file generated from General Method between:\n'
        f'#{model:5d}        -- Model number     \n'
        f'#{numlangleychannels:5d}        -- Number of Langley wavelengths\n'
        f'#{numlangleys:5d}        -- Number of Langley intervals in period\n'
-       #f'#{numgeneralcycles:5d}        -- Number of General Method cycles applied\n'
+       f'#{numgencyc:5d}        -- Number of General Method cycles applied\n'
        f'#{calepoch}  -- Calibration epoch\n')
 
 
@@ -315,3 +310,5 @@ for n in range(numchannels):
            f' {erms[n]:13.5e}\n')
 
 calfile.close()
+print(f'General calibration file written to: {genfile}')         
+

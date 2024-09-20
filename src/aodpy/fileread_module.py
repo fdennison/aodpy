@@ -3,7 +3,14 @@ import datetime as dt
 import numpy as np
 
 
-def Read_Site_Configuration(filename, ObsDate):
+def read_adj_file(filename,var):
+    df = pd.read_csv(filename, skiprows=1, header=None, delimiter=r'\s+', 
+                 names=['year','month','day',var])
+    df['datetime'] = pd.to_datetime(df[['year','month','day']])
+    df = df.set_index('datetime')
+    return df
+    
+def read_site_configuration(filename, ObsDate):
 
     Config = pd.read_csv(filename, skiprows=8, header=None, delimiter=r'\s+', usecols=range(0,14))
     Config.rename(columns={0:'StartDate', 1:'EndDate', 2:'TOffSetHour', 3:'TOffSetMinute', 4:'TOffSetSecond',
@@ -205,7 +212,7 @@ def read_cal(calfile):
         numgencycles = int(f.readline().rstrip().split()[1])
         d3 = [int(x) for x in f.readline().rstrip().split()[1:4]]
         cal_epoch = dt.date(d3[0],d3[1],d3[2])
-    cal.attrs = {'epoch':cal_epoch, 'numlangleychannels':numlangleychannels} 
+    cal.attrs = {'epoch':cal_epoch, 'numlangleys':numlangleys, 'numlangleychannels':numlangleychannels} 
     return cal
 
 def read_black_record(filename, Model):

@@ -1,51 +1,48 @@
 import datetime as dt
-import pandas as pd
 import numpy as np
+import pandas as pd
 import os as os
 import math
-from importlib import reload
 import fileread_module as fr
-from solpos_module import *
+import solpos_module as sol
 import calfit_module as fit
 import atmos_module as atm
+import tomllib
 
 pi = math.pi
 rad2deg = 180.0 / pi
 deg2rad = pi /180.0
 
-site = 'jb1'
-rootpath = '/home/599/fd0474/AODcode/SampleData/'
-# startdate = dt.date(2015,11,18)  #2015,6,2
-# enddate = dt.date(2015,11,18)   #2016,6,13
-# verb=True
-startdate = dt.date(2015,6,2)  #
-enddate = dt.date(2016,6,13)   #
-verb=False
+# langley config options
+with open("./config.toml", "rb") as f:
+    langleyconf = tomllib.load(f)
+print(langleyconf)    
+site = langleyconf['site']
+rootpath = langleyconf['rootpath']
+startdate = langleyconf['startdate']
+enddate = langleyconf['enddate']
+calepoch = langleyconf['langley']['calepoch']
+fitV0 = langleyconf['langley']['fitV0']
+clockfix = langleyconf['langley']['clockfix']
+MaxSdevFit = langleyconf['langley']['MaxSdevFit']
 
-calepoch = dt.date(2015,1,1)
-fitV0 = True
-
+# site config
 configfile = rootpath+'config/'+site+'.cfn'
-config = fr.Read_Site_Configuration(configfile, startdate)
-stationlat = config.attrs['Latitude'] #-12.6607
-stationlon = config.attrs['Longitude'] #132.8931
+config = fr.read_site_configuration(configfile, startdate)
+stationlat = config.attrs['Latitude'] 
+stationlon = config.attrs['Longitude'] 
 model = config.CimelModel
 inst = config.CimelNumber
+
 numchannels = 10
 numlangleychannels = 9
 
-# Cut File
 calperiod_filename = str(inst) + str(startdate.year % 100).zfill(2) + str(startdate.month).zfill(2) + str(enddate.month).zfill(2)
-cut = pd.read_csv(rootpath + 'suncals/#' + str(inst) +'/#' + calperiod_filename + '.cut', skiprows=1, header=None, delimiter=r'\s+', 
-                 names=['year','month','day','AmPm'])
-cut['datetime'] = pd.to_datetime(cut[['year','month','day']])
-cut = cut.set_index('datetime')
 
-## Use reference channel for regression QA?(F:870nm)
-#UseRefChannel4QA = True
+cut = fr.read_adj_file(rootpath + 'suncals/#' + str(inst) +'/#' + calperiod_filename + '.cut', 'AmPm')
 
-#Max sd of fit for regression (normally 0.005)
-MaxSdevFit = 0.005
+if clockfix:
+    clk = fr.read_adj_file(rootpath + 'suncals/#' + str(inst) +'/#' + calperiod_filename + '.clk', 'timecorr')
 
 o3 = fr.read_bom_ozone2011(rootpath+'ozone/'+site+'.o3')
 
@@ -55,12 +52,16 @@ i870 = 3 - 1
 i1020 = 4 - 1
 iWV = 10 - 1
 
-datelist = pd.date_range(startdate,enddate,freq='d')  
+verb = False
 
 numlangleys=0
 dayssinceepoch=[]
 lnV0glob=[]
+p_arr=[]
+d_arr=[]
 ampm = ['Am','Pm']
+datelist = pd.date_range(startdate,enddate,freq='d')  
+
 for dii in datelist:
     obsdate = pd.to_datetime(dii).date()
     if verb: print('----'+obsdate.strftime("%Y/%m/%d")+'----')
@@ -102,7 +103,11 @@ for dii in datelist:
     else:
         blksun = [0] * numchannels
 
-    
+    # Clock Fix
+    if clockfix:  timecorr = round(clk.asof(dii).timecorr)  # this is an integer in fortran version, hence use of round function
+                                                            # there is no good reason to round this, so perhaps remove this in the future
+                                                            # however it will substansially change output
+  
     volt = np.zeros([nobs,3,numchannels])
     voltlog = np.empty([nobs,3,numchannels])
     airmass  = np.empty([nobs,3,numchannels])
@@ -118,8 +123,9 @@ for dii in datelist:
         #lnV0 = np.empty([numchannels])
         
         obs = sundata.iloc[k]
-
+      
         datetime = dt.datetime.combine(obs['Date'] , obs['Time'])
+        if clockfix: datetime = datetime - dt.timedelta(seconds=timecorr)
         #if verb: print(datetime)
         
         if len(p)==0:
@@ -132,16 +138,16 @@ for dii in datelist:
         
         for i in range(3):
         # Solar Position
-            julday, timeday = julian(datetime+dt.timedelta(seconds=(30*i)))            
-            sunpos = solar_position_almanac(julday,timeday)   
-            DSunEarth=sunpos.DSunEarth
-            solzen, solazi = satellite_position(julday, timeday, stationlat*deg2rad, stationlon*deg2rad, sun_elements)
+            julday, timeday = sol.julian(datetime+dt.timedelta(seconds=(30*i)))            
+            sunpos = sol.solar_position_almanac(julday,timeday) 
+            if (i==0) & (k==0): DSunEarth=sunpos.DSunEarth
+            solzen, solazi = sol.satellite_position(julday, timeday, stationlat*deg2rad, stationlon*deg2rad, sol.sun_elements)
             if i==1:
                 if (solazi*rad2deg)<180.0:
                     numsuntriples[1] +=1     #morning
                 else:
                     numsuntriples[2] +=1     #afternoon
-            solzenapp[k,i] = apparent_zenith(solzen * rad2deg)
+            solzenapp[k,i] = sol.apparent_zenith(solzen * rad2deg)
 
             ozoneOD = [x*ozonecolumn for x in atm.ozonecoef[model-1]]            
 
@@ -169,8 +175,8 @@ for dii in datelist:
     tripletCv = np.divide(np.std(volt, axis=1, ddof=1), tripletmean, out=np.ones_like(tripletmean)*99.99, where=tripletmean != 0)  * 100.0
     
     if verb: print('Langley processing...')
-    if verb: print(f'N Sun Triples: {numsuntriples}')    
-    nstart = [0,0]
+    if verb: print(f'N Sun Triples: {numsuntriples}')  
+    nstart = [0,0]    
     nend = [0,0]
     for iap in [1,2]:
         nstart[iap-1] = numsuntriples[1] * (iap - 1)
@@ -252,8 +258,9 @@ for dii in datelist:
                         dayssinceepoch.append((obs['Date'] - pd.Timestamp(calepoch)).days)    
 
                         numlangleys += 1
-                        
-                        print(f'{obsdate} {ampm[iap]}')
+                        p_arr.append(meanpressure)
+                        d_arr.append(DSunEarth)
+                        print(f'{obsdate} {ampm[iap]}  {npts_ap} {meanpressure:6.1f}')
                             
                     else: # SpreadFlag & FitFlag:  
                         if verb: print(' Failed fit quality filter')
@@ -263,6 +270,7 @@ for dii in datelist:
                 if verb: print(f'insufficient triplets [{numsuntriples[iap]}]')
 
 print(f'{numlangleys} langleys')
+
 
 lnV0glob = np.vstack(lnV0glob)
 
@@ -281,7 +289,8 @@ if numlangleys>0:
         Iorder = 0
         lnV0conf = np.mean(lnV0glob, axis=0)
     
-    calfile = open(rootpath+'PyOut/' + site + '/' + calperiod_filename +'.lcl', 'w')
+    langleyfile = rootpath+'PyOut/' + site + '/suncal/' + calperiod_filename +'.lcl'
+    calfile = open(langleyfile, 'w')
     calfile.write(f'# Calibration file generated from Langleys between:\n'
            f'#{startdate.year:5d}{startdate.month:3d}{startdate.day:3d} and\n'
            f'#{enddate.year:5d}{enddate.month:3d}{enddate.day:3d}\n'
@@ -299,6 +308,7 @@ if numlangleys>0:
        calfile.write(f'{atm.wavelength[model-1][N]:10.1f} {Iorder:6d} ' +
                ' '.join(f'{lnV0coef[I, N]:13.5e}' for I in range(Iorder + 1)) +
                f' {erms[N]:13.5e}\n')
-    
-    
+        
     calfile.close()
+
+print(f'Langley calibration file written to: {langleyfile}')    

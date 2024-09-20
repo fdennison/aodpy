@@ -1,9 +1,13 @@
 import datetime as dt
 import math
 
-pi = math.pi
-rad2deg = 180.0 / pi
-deg2rad = pi /180.0
+# pi = math.pi
+# rad2deg = 180.0 / pi
+# deg2rad = pi /180.0
+pi = 3.1415926535897932385 #math.pi
+rad2deg = 57.2957795130823208768 #180.0 / pi
+deg2rad = 0.0174532925199432958 #pi /180.0
+
 earthrad = 6370.0 #km
 gravity = 9.80665  # ms^{-2}, standard value
 
@@ -69,6 +73,7 @@ def normalize_vector(vector):
         return [x / length for x in vector]
     else:
         return vector
+        
 def solar_position_almanac(jul_day, tim_day):
     """Computes the solar position vector in equatorial coordinates"""
     data = SolarPositionData()
@@ -146,8 +151,8 @@ def julian(epoch):
     if leap_check == 0 and epoch.month <= 2:
         j -= 1
 
-    d = (epoch.hour + (epoch.minute + (epoch.second  / 60.0)) / 60.0) / 24.0
-
+    d = (epoch.hour + (epoch.minute + (epoch.second + epoch.microsecond / 1000.0) / 60.0) / 60.0) / 24.0
+    
     j += epoch_j
     d += epoch_d
     if d > 1:
@@ -327,16 +332,16 @@ def satellite_position(j, d, station_lat, station_lon, sat_elements):
     geodetic_co_lat = pi / 2 - geodetic_lat
     cos_geodetic_co_lat = math.cos(geodetic_co_lat)
     sin_geodetic_co_lat = math.sin(geodetic_co_lat)
-
-    geocentric_lat = math.atan(math.tan(geodetic_lat) * (1 - GEO_ECC) / (1 + GEO_ECC))
+    geocentric_lat = math.atan(math.tan(geodetic_lat) * (1 - GEO_ECC) * (1 + GEO_ECC))
     geocentric_co_lat = pi / 2 - geocentric_lat
+    
     cos_geocentric_co_lat = math.cos(geocentric_co_lat)
     sin_geocentric_co_lat = math.sin(geocentric_co_lat)
 
     local_sat = kepler(j, d, sat_elements)
 
     asc_node = greenwich_elements.anom_freq * ((j - greenwich_elements.jul) + (d - greenwich_elements.day))
-
+    
     fov_azimuth = station_lon + asc_node
     cos_fov_azimuth = math.cos(fov_azimuth)
     sin_fov_azimuth = math.sin(fov_azimuth)
