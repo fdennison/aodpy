@@ -1,0 +1,22 @@
+# config file for envcal, langley, gencal, aod2py
+
+#general
+site = "jb1"
+rootpath = "/home/599/fd0474/AODcode/SampleData/"
+startdate = 2015-06-02 #dt.date(2015,6,2)
+enddate = 2016-06-13 #dt.date(2016,6,13)
+
+[langley]
+calepoch = 2015-01-01 
+fitV0 = true
+clockfix = false
+MaxSdevFit = 0.005       #Max sd of fit for regression (normally 0.005)
+
+[gencal]
+calepoch = 2015-01-01 
+fitV0 = true
+clockfix = false
+MaxSdevFit = 0.005       #Max sd of fit for regression (normally 0.005)
+UseRefChannel4QA = true  # Use reference channel for regression QA?(F:870nm)
+calfile_in = "#12150606.lcl"
+refchannel = 500
