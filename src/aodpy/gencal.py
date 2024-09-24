@@ -8,13 +8,20 @@ import solpos_module as sol
 import calfit_module as fit
 import atmos_module as atm
 import tomllib
+import argparse
 
 pi = math.pi
 rad2deg = 180.0 / pi
 deg2rad = pi /180.0
 
+parser=argparse.ArgumentParser(description="Apply general method to sun photometer triplet measuments (.sun files)")
+parser.add_argument('-t', '--test', dest='configtoml', action='store_const', 
+                    const='../../tests/testconfig.toml', default='./config.toml',
+                    help='run on sample data and check output')
+args=parser.parse_args()
+
 # langley config options
-with open("/g/data/p66/fd0474/notebooks/AOD/config.toml", "rb") as f:
+with open(args.configtoml, "rb") as f:
     genconf = tomllib.load(f)
 print(genconf)      
 site = genconf['site']

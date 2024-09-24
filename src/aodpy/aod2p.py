@@ -7,19 +7,37 @@ import fileread_module as fr
 import solpos_module as sol
 import calfit_module as fit
 import atmos_module as atm
+import tomllib
+import argparse
 
 pi = math.pi
 rad2deg = 180.0 / pi
 deg2rad = pi /180.0
-avogadro = 6.022529e+23  # mol^{-1}
-M_dryair = 2.8964e-02  # kg/mol
 
-site = 'la3'
-rootpath = '/home/599/fd0474/AODcode/SampleData/'
-startdate = dt.date(2016,1,1)
-enddate = dt.date(2016,5,11)
+parser=argparse.ArgumentParser(description="Calculate AOD from sun photometer measuments (.lsu files)")
+parser.add_argument('-t', '--test', dest='configtoml', action='store_const', 
+                    const='../../tests/testconfig.toml', default='./config.toml',
+                    help='run on sample data and check output')
+args=parser.parse_args()
 
-calfile_in = '#9150606.500'
+# aod2p config options
+with open(args.configtoml, "rb") as f:
+    aod2pconf = tomllib.load(f)
+print(aod2pconf)      
+site = aod2pconf['site']
+rootpath = aod2pconf['rootpath']
+startdate = aod2pconf['startdate']
+enddate = aod2pconf['enddate']
+calfile_in =  aod2pconf['aod2p']['calfile_in']
+clockfix = aod2pconf['aod2p']['clockfix']
+cirrusopt = aod2pconf['aod2p']['cirrusopt']
+window = aod2pconf['aod2p']['window']
+CVmax = aod2pconf['aod2p']['CVmax']
+solzenmax = aod2pconf['aod2p']['solzenmax']
+minobs = aod2pconf['aod2p']['minobs']
+sd_crit = aod2pconf['aod2p']['sd_crit']
+relUaod440thres = aod2pconf['aod2p']['relUaod440thres']
+Uangstrom48thres = aod2pconf['aod2p']['Uangstrom48thres']
 
 
 cal = fr.read_cal(rootpath+'suncals/#'+calfile_in[1:-10].zfill(2)+'/'+calfile_in)
@@ -34,8 +52,15 @@ else:
 o3 = fr.read_bom_ozone2011(rootpath+'ozone/'+site+'.o3')
 
 configfile = rootpath+'config/'+site+'.cfn'
-config = fr.Read_Site_Configuration(configfile, startdate)
+config = fr.read_site_configuration(configfile, startdate)
+stationlat = config.attrs['Latitude'] #-12.6607
+stationlon = config.attrs['Longitude'] #132.8931
+model = config.CimelModel
+inst = config.CimelNumber
 
+if clockfix:
+    calperiod_filename = str(inst) + str(startdate.year % 100).zfill(2) + str(startdate.month).zfill(2) + str(enddate.month).zfill(2)
+    clk = fr.read_adj_file(rootpath + 'suncals/#' + str(inst) +'/#' + calperiod_filename + '.clk', 'timecorr')
 
 i440 = 1 - 1
 i670 = 2 - 1
@@ -43,32 +68,17 @@ i870 = 3 - 1
 i1020 = 4 - 1
 iWV = 10 - 1
 
-stationlat = config.attrs['Latitude'] #-12.6607
-stationlon = config.attrs['Longitude'] #132.8931
-model = config.CimelModel
-inst = config.CimelNumber
 numchannels = 10
 stacksize=3
-
-window = 2 # minutes
-CVmax = 0.01
-solzenmax = 80.0
-minobs = 8
-sd_crit = 0.01
-relUaod440thres = 0.5
-Uangstrom48thres = 0.4
-
 acoef = 0.6548
 bcoef = 0.574
 h2o_k = 0.9156e-2
 h2o_e = 0.5918
-
 defaultpressure = 1013.0 # hPa
-
-datelist = pd.date_range(startdate,enddate,freq='d')  
 
 verb=False
 
+datelist = pd.date_range(startdate,enddate,freq='d')  
 for dii in datelist:
     obsdate = pd.to_datetime(dii).date()
     if verb: print('----'+obsdate.strftime("%Y/%m/%d")+'----')
@@ -108,6 +118,9 @@ for dii in datelist:
         else:
             blksun = [0] * numchannels
 
+        # Clock Fix
+        if clockfix:  timecorr = round(clk.asof(dii).timecorr)
+
         volt = np.zeros([nobs, numchannels])
         datetime = []
         aod = np.zeros([nobs, numchannels])
@@ -121,6 +134,7 @@ for dii in datelist:
         
         for iobs in range(nobs): 
             datetime.append(sundata.index[iobs])
+            if clockfix: datetime[iobs] = datetime[iobs] - dt.timedelta(seconds=timecorr)
             #if verb: print(datetime[iobs])
         
             julday, timeday = sol.julian(datetime[iobs])            
@@ -190,9 +204,19 @@ for dii in datelist:
         wlratiolog = math.log(atm.wavelength[model-1][i870] / atm.wavelength[model-1][i440])
         stdUangstrom48 = (stdUaod[:,i440]/aod[:,i440] + stdUaod[:,i870]/aod[:,i870]) / wlratiolog
         stdUangstrom48[np.logical_or(aod[:,i440]<0, aod[:,i870]<0)] = -9.99
-
         
-        
+        if cirrusopt==0:
+            cirrusflag=np.ones(nobs) * -1
+        elif cirrusopt==1:
+            angstrom48 = np.ones(nobs) * -9.99
+            angstrom48 = -np.log(aod[:,i870]/aod[:,i440], where=np.logical_and(aod[:,i870]>0, aod[:,i440]>0)) / np.log(atm.wavelength[model-1][i870] / atm.wavelength[model-1][i440])
+            cirrusangstromthres = np.ones(nobs) * -9.99
+            cirrusangstromthres = 0.862 + 0.556 * np.log10(aod[:,i440], where=aod[:,i440]>0)
+            cirrusflag = angstrom48 < cirrusangstromthres
+        elif cirrusopt==2:
+            cirrusflag = aod[:,i1020] > aod[:,i870]
+            
+            
         datetime = np.array(datetime)
 
         #   1st pass filters
@@ -303,12 +327,15 @@ for dii in datelist:
             if sum(filt2)>0:            
                 out = " ".join([format(x, "6.4f") for x in np.mean(aod[filt2==1,:numlangch], axis=0)])
                 print(f'{obsdate}, '+out)
-                aodfile = rootpath+'PyOut/'+site+'/' + str(inst) + str(obsdate.year % 100).zfill(2) + str(obsdate.month).zfill(2) + str(obsdate.day).zfill(2) +'.aod'
+                if cirrusopt>0:
+                    aodfile = rootpath+'PyOut/'+site+'/' + str(inst) + str(obsdate.year % 100).zfill(2) + str(obsdate.month).zfill(2) + str(obsdate.day).zfill(2) +'.aod_'+str(cirrusopt)
+                else:
+                    aodfile = rootpath+'PyOut/'+site+'/' + str(inst) + str(obsdate.year % 100).zfill(2) + str(obsdate.month).zfill(2) + str(obsdate.day).zfill(2) +'.aod'
                 os.makedirs(os.path.dirname(aodfile), exist_ok=True) 
                 with open(aodfile, 'w') as f:
                     f.write('date       time    sunzen airmass '+
                             ' '.join([format(f'T{str(int(x)).zfill(4)}', "6s") for x in atm.wavelength[model-1][:numlangch]])+
-                            ' W0936 T1020w \n')
+                            ' W0936 T1020w Cirrus\n')
                     for ii in range(len(solzen)):
                         if filt2[ii]==1:
                             f.write(sundata.index[ii].strftime("%Y-%m-%d %H:%M:%S ")+
@@ -316,9 +343,12 @@ for dii in datelist:
                                     format(airmass[ii,i870],"5.4f")+" "+
                                     " ".join([format(x, "5.4f") for x in aod[ii,:numlangch]])+" "+
                                     format(Wvap[ii],"5.4f")+" "+
-                                    format(aod1020c[ii],"5.4f")+" "+'\n') 
+                                    format(aod1020c[ii],"5.4f")+" "+
+                                    str(int(cirrusflag[ii]))+'\n')
+                                    
         else:
             print(f'{obsdate} not enough obs passed filters')
     else:
         print(f'{obsdate} no lsu file')
         
+

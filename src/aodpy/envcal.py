@@ -4,19 +4,30 @@ import numpy as np
 import os as os
 import math
 import fileread_module as fr
+import argparse
 
-site = 'jb1'
-rootpath = '/home/599/fd0474/AODcode/SampleData/'
-startdate = dt.date(2015,6,2)
-enddate = dt.date(2016,6,13)
+parser=argparse.ArgumentParser(description="Process raw environment files (.rnv)")
+parser.add_argument('-t', '--test', dest='configtoml', action='store_const', 
+                    const='../../tests/testconfig.toml', default='./config.toml',
+                    help='run on sample data and check output')
+args=parser.parse_args()
+
+# langley config options
+with open(args.configtoml, "rb") as f:
+    envconf = tomllib.load(f)
+print(envconf)    
+site = envconf['site']
+rootpath = envconf['rootpath']
+startdate = envconf['startdate']
+enddate = envconf['enddate']
 
 #Logger clock error (+ve for slow) 
 ce=dt.timedelta(hours=0,minutes=0,seconds=0)
 
 configfile = rootpath+'config/'+site+'.cfn'
 config = fr.Read_Site_Configuration(configfile, startdate)
-stationlat = config.attrs['Latitude'] #-12.6607
-stationlon = config.attrs['Longitude'] #132.8931
+stationlat = config.attrs['Latitude'] 
+stationlon = config.attrs['Longitude'] 
 model = config.CimelModel
 inst = config.CimelNumber
 card = config.Card
