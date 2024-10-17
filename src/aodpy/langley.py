@@ -9,6 +9,7 @@ import calfit_module as fit
 import atmos_module as atm
 import tomllib
 import argparse
+#import matplotlib.pyplot as plt
 
 pi = math.pi
 rad2deg = 180.0 / pi
@@ -16,22 +17,27 @@ deg2rad = pi /180.0
 
 parser=argparse.ArgumentParser(description="Apply langley method to sun photometer triplet measuments (.sun files)")
 parser.add_argument('-t', '--test', dest='configtoml', action='store_const', 
-                    const='../../tests/testconfig.toml', default='./config.toml',
+                    const='testconfig.toml', default='config.toml',
                     help='run on sample data and check output')
+parser.add_argument('-v', '--verbose',action='store_true')
 args=parser.parse_args()
 
 # langley config options
 with open(args.configtoml, "rb") as f:
     langleyconf = tomllib.load(f)
-print(langleyconf)    
 site = langleyconf['site']
 rootpath = langleyconf['rootpath']
 startdate = langleyconf['startdate']
 enddate = langleyconf['enddate']
-calepoch = langleyconf['langley']['calepoch']
-fitV0 = langleyconf['langley']['fitV0']
-clockfix = langleyconf['langley']['clockfix']
-MaxSdevFit = langleyconf['langley']['MaxSdevFit']
+ozoneopt = langleyconf['ozoneopt']
+langleytable = langleyconf['cal']['maketable']
+#makeplot = langleyconf['cal']['makeplot']
+calepoch = langleyconf['cal']['calepoch']
+fitV0 = langleyconf['cal']['fitV0']
+clockfix = langleyconf['cal']['clockfix']
+MaxSdevFit = langleyconf['cal']['MaxSdevFit']
+print(f'Run langley for {site} from {startdate} to {enddate}')
+if args.verbose: print(langleyconf)    
 
 # site config
 configfile = rootpath+'config/'+site+'.cfn'
@@ -46,20 +52,33 @@ numlangleychannels = 9
 
 calperiod_filename = str(inst) + str(startdate.year % 100).zfill(2) + str(startdate.month).zfill(2) + str(enddate.month).zfill(2)
 
-cut = fr.read_adj_file(rootpath + 'suncals/#' + str(inst) +'/#' + calperiod_filename + '.cut', 'AmPm')
+cutfile = rootpath + 'suncals/' + str(inst).zfill(2) +'/' + calperiod_filename + '.cut'
+if os.path.isfile(cutfile):
+    cut = fr.read_adj_file(cutfile, 'AmPm')
+    usecut = True
+else:
+    usecut = False
+    print('no cut file')
 
 if clockfix:
-    clk = fr.read_adj_file(rootpath + 'suncals/#' + str(inst) +'/#' + calperiod_filename + '.clk', 'timecorr')
+    clk = fr.read_adj_file(rootpath + 'suncals/' + str(inst).zfill(2) +'/' + calperiod_filename + '.clk', 'timecorr')
 
-o3 = fr.read_bom_ozone2011(rootpath+'ozone/'+site+'.o3')
+ozonefile = rootpath+'ozone/'+site+'.o3'
+if os.path.isfile(ozonefile) and ozoneopt:
+    o3 = fr.read_bom_ozone2011(ozonefile)
+else:
+    print('using default ozone: 250 DU')
+
+if langleytable:
+    ltbfile = rootpath + 'suncals/' + str(inst).zfill(2) +'/' + calperiod_filename +'.ltb'
+    with open(ltbfile, 'w') as f:
+        f.write('datetime CalD T P(hPa)  N '+' '.join([format(f'LV0{str(int(x)).zfill(4)}', "6s") for x in atm.wavelength[model-1]])+'\n')
 
 i440 = 1 - 1
 i670 = 2 - 1
 i870 = 3 - 1
 i1020 = 4 - 1
 iWV = 10 - 1
-
-verb = False
 
 numlangleys=0
 dayssinceepoch=[]
@@ -71,8 +90,8 @@ datelist = pd.date_range(startdate,enddate,freq='d')
 
 for dii in datelist:
     obsdate = pd.to_datetime(dii).date()
-    if verb: print('----'+obsdate.strftime("%Y/%m/%d")+'----')
-    filedir = site+'/#'+str(inst)+'/'+str(obsdate.year)+'/'+str(obsdate.month).zfill(2)+'/'+str(obsdate.day).zfill(2)+'/'
+    if args.verbose: print('----'+obsdate.strftime("%Y/%m/%d")+'----')
+    filedir = site+'/#'+str(inst).zfill(2)+'/'+str(obsdate.year)+'/'+str(obsdate.month).zfill(2)+'/'+str(obsdate.day).zfill(2)+'/'
     fileroot = obsdate.strftime("%y%m%d")
     
     # photometer data
@@ -85,27 +104,30 @@ for dii in datelist:
         sundata = sundata.loc[startlocalday:endlocalday]
         nobs = len(sundata)
     else:
-        print(f'no obs on {obsdate}')
+        if args.verbose: print(f'no obs on {obsdate}')
         continue
     
     # get ozone for the day
-    if sum(o3['date']==obsdate): # daily ozone available
-        ozonecolumn =  (o3.loc[o3['date']==obsdate].ozone / 1000.0).iloc[0]
-    else: # use monthly mean
-        if verb: print('use monthly mean o3')
-        o3m = o3.loc[(pd.to_datetime(o3['date']).dt.month==obsdate.month) & 
-                     (pd.to_datetime(o3['date']).dt.year==obsdate.year)].ozone
-        ozonecolumn = sum(o3m)/len(o3m) / 1000.0
+    if ozoneopt:
+        if sum(o3['date']==obsdate): # daily ozone available
+            ozonecolumn =  (o3.loc[o3['date']==obsdate].ozone / 1000.0).iloc[0]
+        else: # use monthly mean
+            if args.verbose: print('use monthly mean o3')
+            o3m = o3.loc[(pd.to_datetime(o3['date']).dt.month==obsdate.month) & 
+                         (pd.to_datetime(o3['date']).dt.year==obsdate.year)].ozone
+            ozonecolumn = sum(o3m)/len(o3m) / 1000.0
+    else:
+        ozonecolumn = 0.25
 
     # Pressure data
     #presfile = rootpath + 'agsdat/' + filedir + fileroot + '.hpa'  # date formats will be different
-    presfile = rootpath + 'PyOut/' + filedir  + fileroot + '.hpa'
-    p = fr.read_pressure_file(presfile)
+    presfile = rootpath + 'PyOut/' + filedir.replace('#','')  + fileroot + '.hpa'
+    p = fr.read_pressure_file(args.verbose, presfile)
 
     # Black record
     blkfile = rootpath+'agsdat/'+filedir+fileroot+'.blk'
     if os.path.isfile(blkfile):
-        print(f'blackfile : {blkfile}')
+        if args.verbose: print(f'blackfile : {blkfile}')
         blksun = read_black_record(blkfile,model)
     else:
         blksun = [0] * numchannels
@@ -130,10 +152,11 @@ for dii in datelist:
         #lnV0 = np.empty([numchannels])
         
         obs = sundata.iloc[k]
-      
-        datetime = dt.datetime.combine(obs['Date'] , obs['Time'])
+        datetime = obs.name
+        #datetime = dt.datetime.combine(obs['Date'] , obs['Time'])
+        
         if clockfix: datetime = datetime - dt.timedelta(seconds=timecorr)
-        #if verb: print(datetime)
+        #if args.verbose: print(datetime)
         
         if len(p)==0:
             pk = defaultpressure
@@ -181,8 +204,8 @@ for dii in datelist:
     tripletmean = np.mean(volt, axis=1)
     tripletCv = np.divide(np.std(volt, axis=1, ddof=1), tripletmean, out=np.ones_like(tripletmean)*99.99, where=tripletmean != 0)  * 100.0
     
-    if verb: print('Langley processing...')
-    if verb: print(f'N Sun Triples: {numsuntriples}')  
+    if args.verbose: print('Langley processing...')
+    if args.verbose: print(f'N Sun Triples: {numsuntriples}')  
     nstart = [0,0]    
     nend = [0,0]
     for iap in [1,2]:
@@ -196,22 +219,20 @@ for dii in datelist:
         meanpressure = np.mean(pr[nstart[iap]:nend[iap]])
         rayleighOD = [atm.rayleigh(wl, pk) for wl in atm.wavelength[model-1]]
         
+        include=True
         # cutList
-        if dii in cut.index:
-            if ampm[iap] in cut.loc[dii].AmPm:
-                include=False
-                print(f'cut {obsdate} {ampm[iap]}')
-            else:
-                include=True
-        else:        
-            include=True
+        if usecut:
+            if dii in cut.index:
+                if ampm[iap] in cut.loc[dii].AmPm:
+                    include=False
+                    if args.verbose: print(f'cut {obsdate} {ampm[iap]}')
         
         if include:
             if numsuntriples[iap]>=MinSunTriples :
-                SpreadFlag, numOk, indOk = fit.CheckTripletCv(verb, numsuntriples[iap+1], nstart[iap],airmass[:,1,i870],tripletCv[:,i870])                
+                SpreadFlag, numOk, indOk = fit.CheckTripletCv(args.verbose, numsuntriples[iap+1], nstart[iap],airmass[:,1,i870],tripletCv[:,i870])                
                 
                 if (numOk>=MinSunTriples) & SpreadFlag :
-                    if verb: print(' Passed triplet cv langley filter')
+                    if args.verbose: print(' Passed triplet cv langley filter')
 
                     n=numchannels
                     V = np.empty([numOk*3])
@@ -222,14 +243,12 @@ for dii in datelist:
                     i=0 # Singlet index        
                     for k in range(numOk):              # Ok Triplet index
                         for j in range(3):                     # Triplet components
-                            X[i,:]=airmass[indOk[k],j,:]
-                            Y[i,:]=voltlog[indOk[k],j,:]
-                            i=i+1
-                    npts_ap=i
-                    #plt.plot(X,Y,'.')
-                    #plt.show()
+                            X[i,:] = airmass[indOk[k],j,:]
+                            Y[i,:] = voltlog[indOk[k],j,:]
+                            i = i+1
+                    npts_ap = i
 
-                    SpreadFlag,FitFlag, fitindex, npts_ap = fit.CheckFitQuality(verb,npts_ap,X,Y,i870,MaxSdevFit)    
+                    SpreadFlag,FitFlag, fitindex, npts_ap = fit.CheckFitQuality(args.verbose,npts_ap,X,Y,i870,MaxSdevFit)    
                     if SpreadFlag & FitFlag: 
                         
                         weight = [1.0] * npts_ap
@@ -254,29 +273,32 @@ for dii in datelist:
                         aerosolOD[iWV] = aerosolOD[i870] * (atm.wavelength[model-1][iWV]/atm.wavelength[model-1][i870])**(-angstrom[i670,i870])
                         Bcoef=0.574
                         U = X[:,iWV]**Bcoef
-                        V  = Y[:,iWV] + X[:,iWV]*(rayleighOD[iWV]+aerosolOD[iWV])
+                        V = Y[:,iWV] + X[:,iWV]*(rayleighOD[iWV]+aerosolOD[iWV])
                         weight = [1] * npts_ap
                         intercept[iWV], slope[iWV], res, erms = fit.elfit(npts_ap,weight,U,V)
                         intercept[iWV] = intercept[iWV] + 2*math.log(DSunEarth)
                         if slope[iWV]<0:
                             lnV0glob[numlangleys][iWV] = intercept[iWV]
                         else:
-                            if verb: print('Water vapour below detection threshold')
-                        dayssinceepoch.append((obs['Date'] - pd.Timestamp(calepoch)).days)    
+                            if args.verbose: print('Water vapour below detection threshold')
+                        cald = (obs['Date'] - pd.Timestamp(calepoch)).days
+                        dayssinceepoch.append(cald)    
 
                         numlangleys += 1
                         p_arr.append(meanpressure)
                         d_arr.append(DSunEarth)
-                        print(f'{obsdate} {ampm[iap]}  {npts_ap} {meanpressure:6.1f}')
-                            
+                        if args.verbose: print(f'{obsdate} {ampm[iap]}  {npts_ap} {meanpressure:6.1f}')
+                        if langleytable:
+                            with open(ltbfile, 'a') as f:
+                                f.write( f'{obsdate} {cald} {ampm[iap]} {meanpressure:6.1f} {npts_ap} ' + " ".join([format(x, "6.4f") for x in intercept]) +'\n')    
                     else: # SpreadFlag & FitFlag:  
-                        if verb: print(' Failed fit quality filter')
+                        if args.verbose: print(' Failed fit quality filter')
                 else:  # (numOk>=MinSunTriples) & SpreadFlag :
-                    if verb: print('Failed triplet cv langley filter')
+                    if args.verbose: print('Failed triplet cv langley filter')
             else: # numsuntriples[iap]>=MinSunTriples
-                if verb: print(f'insufficient triplets [{numsuntriples[iap]}]')
+                if args.verbose: print(f'insufficient triplets [{numsuntriples[iap]}]')
 
-print(f'{numlangleys} langleys')
+print(f'{numlangleys} langleys in this time period')
 
 
 lnV0glob = np.vstack(lnV0glob)
@@ -296,7 +318,7 @@ if numlangleys>0:
         Iorder = 0
         lnV0conf = np.mean(lnV0glob, axis=0)
     
-    langleyfile = rootpath+'PyOut/' + site + '/suncal/' + calperiod_filename +'.lcl'
+    langleyfile = rootpath+'suncals/'+str(inst).zfill(2)+'/'+calperiod_filename+'.lcl'
     calfile = open(langleyfile, 'w')
     calfile.write(f'# Calibration file generated from Langleys between:\n'
            f'#{startdate.year:5d}{startdate.month:3d}{startdate.day:3d} and\n'
@@ -305,8 +327,8 @@ if numlangleys>0:
            f'#{model:5d}        -- Model number     \n'
            f'#{numlangleychannels:5d}        -- Number of Langley wavelengths\n'
            f'#{numlangleys:5d}        -- Number of Langley intervals in period\n'
-           #f'#{numgeneralcycles:5d}        -- Number of General Method cycles applied\n'
-           f'#{calepoch}  -- Calibration epoch\n')
+           '#    0        -- Number of General Method cycles applied\n'
+           f'#{calepoch.year:5d}{calepoch.month:3d}{calepoch.day:3d}  -- Calibration epoch\n')
     
     
     calfile.write(f'# Wavel(nm) Order      {" ".join(f"LnV0({I})   " for I in range(Iorder + 1))}     Erms\n')
@@ -317,5 +339,22 @@ if numlangleys>0:
                f' {erms[N]:13.5e}\n')
         
     calfile.close()
+
+
+#if makeplot:
+#    fig, ax = plt.subplots(figsize=(12,9))
+#    for n in range(numchannels):
+#        p = ax.plot(dayssinceepoch,lnV0glob[:,n],'.')
+#        linfit = np.polyval([lnV0coef1[n], lnV0coef0[n]], dayssinceepoch)
+#        col = p[-1].get_color()
+#        ax.plot(dayssinceepoch, linfit, color=col, label=atm.wavelength[model-1][n])
+
+#    ax.set_ylabel(r'lnV$_0$')
+#    ax.set_xlabel('days since epoch')
+#    ax.set_title(calperiod_filename+'.lcl')
+#    plt.legend()
+#    figfile = rootpath+'suncals/'+str(inst).zfill(2)+'/'+calperiod_filename+'.lcl.ps'
+#    plt.savefig(figfile,bbox_inches='tight')
+#    print(f'Figure written to: {figfile}, check for outliers')
 
 print(f'Langley calibration file written to: {langleyfile}')    

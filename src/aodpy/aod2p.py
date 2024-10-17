@@ -16,18 +16,19 @@ deg2rad = pi /180.0
 
 parser=argparse.ArgumentParser(description="Calculate AOD from sun photometer measuments (.lsu files)")
 parser.add_argument('-t', '--test', dest='configtoml', action='store_const', 
-                    const='../../tests/testconfig.toml', default='./config.toml',
+                    const='testconfig.toml', default='config.toml',
                     help='run on sample data and check output')
+parser.add_argument('-v', '--verbose',action='store_true')
 args=parser.parse_args()
 
 # aod2p config options
 with open(args.configtoml, "rb") as f:
     aod2pconf = tomllib.load(f)
-print(aod2pconf)      
 site = aod2pconf['site']
 rootpath = aod2pconf['rootpath']
 startdate = aod2pconf['startdate']
 enddate = aod2pconf['enddate']
+ozoneopt = aod2pconf['ozoneopt']
 calfile_in =  aod2pconf['aod2p']['calfile_in']
 clockfix = aod2pconf['aod2p']['clockfix']
 cirrusopt = aod2pconf['aod2p']['cirrusopt']
@@ -38,18 +39,14 @@ minobs = aod2pconf['aod2p']['minobs']
 sd_crit = aod2pconf['aod2p']['sd_crit']
 relUaod440thres = aod2pconf['aod2p']['relUaod440thres']
 Uangstrom48thres = aod2pconf['aod2p']['Uangstrom48thres']
+print(f'Run aod2p for {site} from {startdate} to {enddate}')
+if args.verbose: print(aod2pconf) 
 
-
-cal = fr.read_cal(rootpath+'suncals/#'+calfile_in[1:-10].zfill(2)+'/'+calfile_in)
-#See p 87 of 2006/7 notebook
-#This kernel has to be divided by airmass to give U(aod)
-usignal=0.003
-if cal.attrs['numlangleys']>0:
-    cal['stdUaod1am'] = np.sqrt(usignal**2 + cal.erms**2/cal.attrs['numlangleys'])
+ozonefile = rootpath+'ozone/'+site+'.o3'
+if os.path.isfile(ozonefile) and ozoneopt:
+    o3 = fr.read_bom_ozone2011(ozonefile)
 else:
-    cal['stdUaod1am'] = usignal
-
-o3 = fr.read_bom_ozone2011(rootpath+'ozone/'+site+'.o3')
+    print('using default ozone: 250 DU')
 
 configfile = rootpath+'config/'+site+'.cfn'
 config = fr.read_site_configuration(configfile, startdate)
@@ -58,9 +55,19 @@ stationlon = config.attrs['Longitude'] #132.8931
 model = config.CimelModel
 inst = config.CimelNumber
 
+#cal = fr.read_cal(rootpath+'suncals/#'+calfile_in[1:-10].zfill(2)+'/'+calfile_in)
+cal = fr.read_cal(rootpath+'suncals/'+str(inst).zfill(2)+'/'+calfile_in)
+#See p 87 of 2006/7 notebook
+#This kernel has to be divided by airmass to give U(aod)
+usignal=0.003
+if cal.attrs['numlangleys']>0:
+    cal['stdUaod1am'] = np.sqrt(usignal**2 + cal.erms**2/cal.attrs['numlangleys'])
+else:
+    cal['stdUaod1am'] = usignal
+
 if clockfix:
     calperiod_filename = str(inst) + str(startdate.year % 100).zfill(2) + str(startdate.month).zfill(2) + str(enddate.month).zfill(2)
-    clk = fr.read_adj_file(rootpath + 'suncals/#' + str(inst) +'/#' + calperiod_filename + '.clk', 'timecorr')
+    clk = fr.read_adj_file(rootpath + 'suncals/' + str(inst) +'/' + calperiod_filename + '.clk', 'timecorr')
 
 i440 = 1 - 1
 i670 = 2 - 1
@@ -76,34 +83,35 @@ h2o_k = 0.9156e-2
 h2o_e = 0.5918
 defaultpressure = 1013.0 # hPa
 
-verb=False
-
 datelist = pd.date_range(startdate,enddate,freq='d')  
 for dii in datelist:
     obsdate = pd.to_datetime(dii).date()
-    if verb: print('----'+obsdate.strftime("%Y/%m/%d")+'----')
+    if args.verbose: print('----'+obsdate.strftime("%Y/%m/%d")+'----')
     filedir = site+'/#'+str(inst).zfill(2)+'/'+str(obsdate.year)+'/'+str(obsdate.month).zfill(2)+'/'+str(obsdate.day).zfill(2)+'/'
     fileroot = obsdate.strftime("%y%m%d")
     filename = rootpath+'agsdat/'+filedir+fileroot+'.lsu'
     if os.path.isfile(filename):
      
         # get ozone for the day
-        if sum(o3['date']==obsdate): # daily ozone available
-            ozonecolumn =  (o3.loc[o3['date']==obsdate].ozone / 1000.0).iloc[0]
-        else: # use monthly mean
-            if verb: print('use monthly mean o3')
-            o3m = o3.loc[(pd.to_datetime(o3['date']).dt.month==obsdate.month) & 
-                         (pd.to_datetime(o3['date']).dt.year==obsdate.year)].ozone
-            ozonecolumn = sum(o3m)/len(o3m) / 1000.0
+        if ozoneopt:
+            if sum(o3['date']==obsdate): # daily ozone available
+                ozonecolumn =  (o3.loc[o3['date']==obsdate].ozone / 1000.0).iloc[0]
+            else: # use monthly mean
+                if args.verbose: print('use monthly mean o3')
+                o3m = o3.loc[(pd.to_datetime(o3['date']).dt.month==obsdate.month) & 
+                             (pd.to_datetime(o3['date']).dt.year==obsdate.year)].ozone
+                ozonecolumn = sum(o3m)/len(o3m) / 1000.0
+        else:
+            ozonecolumn = 0.25
     
         # Pressure data
-        presfile = rootpath + 'agsdat/' + filedir + fileroot + '.hpa'  # date formats will be different
-        if os.path.isfile(presfile):
-            p = fr.read_old_pressure_file(presfile)
-        else:
-            p=[]
-        # presfile = rootpath + '/PyOut/' + config.attrs['Id'] + '/' + fileroot + '.hpa'
-        # p = fr.read_pressure_file(presfile)
+        #presfile = rootpath + 'agsdat/' + filedir + fileroot + '.hpa'  # date formats will be different
+        #if os.path.isfile(presfile):
+        #    p = fr.read_old_pressure_file(args.verbose, presfile)
+        #else:
+        #    p=[]
+        presfile = rootpath + '/PyOut/' + filedir.replace('#','') + fileroot + '.hpa'
+        p = fr.read_pressure_file(args.verbose, presfile)
     
     
         # photometer data
@@ -113,7 +121,7 @@ for dii in datelist:
         # Black record
         blkfile = rootpath+'agsdat/'+filedir+fileroot+'.blk'
         if os.path.isfile(blkfile):
-            if verb: print(f'blackfile : {blkfile}')
+            if args.verbose: print(f'blackfile : {blkfile}')
             blksun = read_black_record(blkfile,model)
         else:
             blksun = [0] * numchannels
@@ -135,7 +143,6 @@ for dii in datelist:
         for iobs in range(nobs): 
             datetime.append(sundata.index[iobs])
             if clockfix: datetime[iobs] = datetime[iobs] - dt.timedelta(seconds=timecorr)
-            #if verb: print(datetime[iobs])
         
             julday, timeday = sol.julian(datetime[iobs])            
             sunpos = sol.solar_position_almanac(julday,timeday)   
@@ -231,13 +238,13 @@ for dii in datelist:
             if nloop>1000:
                 break
                 
-            if verb: print(datetime[iobs])
+            if args.verbose: print(datetime[iobs])
 
             valid = True
 
             # stack of obs does not fit in specified time window
             if ((datetime[iobs+stacksize-1] - datetime[iobs]).total_seconds())/60.0 > window:         
-                if verb: print('stack of obs does not fit in the {} minute window : {} - {}'.format(
+                if args.verbose: print('stack of obs does not fit in the {} minute window : {} - {}'.format(
                                window,datetime[iobs], datetime[iobs+stacksize-1]))
                 iobs += 1    
                 continue
@@ -245,7 +252,7 @@ for dii in datelist:
             # temperature/signal to high or low - assessed in read function
             for i in range(stacksize):
                 if not sundata.iloc[iobs+i].Valid==0:
-                    if verb: print(f'Stack not valid : {sundata.iloc[iobs+i].Valid} [{iobs}]+[{i}]')
+                    if args.verbose: print(f'Stack not valid : {sundata.iloc[iobs+i].Valid} [{iobs}]+[{i}]')
                     iobs += 1
                     valid = False
                     break
@@ -256,14 +263,14 @@ for dii in datelist:
             LSTcut = dt.datetime.combine(obsdate,dt.time(3,0,0))
             UTcut = LSTcut - dt.timedelta(hours=config.attrs['TimeZone'])
             if datetime[iobs] < UTcut:
-                if verb: print('before LST cutoff')
+                if args.verbose: print('before LST cutoff')
                 iobs += 1
                 continue        
             
             # Covariance of stack is above specified limit            
             CVvolt = np.std(volt[iobs:(iobs+stacksize),i870], ddof=1) / np.mean(volt[iobs:(iobs+stacksize),i870])
             if CVvolt > CVmax:
-                if verb: 
+                if args.verbose: 
                     [print(d) for d in datetime[(iobs+1):(iobs+stacksize)]]
                     print(f'High Covariance {CVvolt:3.5f}')  
                 iobs += 3   
@@ -272,7 +279,7 @@ for dii in datelist:
             # Sun too low                          
             for i in range(stacksize):
                 if solzen[iobs+i] * rad2deg > solzenmax:
-                    if verb: print(f'Sun too low: zen={solzen[iobs+i] * rad2deg:3.1f} > {solzenmax}')
+                    if args.verbose: print(f'Sun too low: zen={solzen[iobs+i] * rad2deg:3.1f} > {solzenmax}')
                     iobs += 1
                     valid = False
                     break
@@ -280,7 +287,7 @@ for dii in datelist:
                 continue
 
 
-            if verb: 
+            if args.verbose: 
                 [print(d) for d in datetime[(iobs+1):(iobs+stacksize)]]
                 print('GOOD STACK')   
             filt1[iobs:(iobs+stacksize)]=1
@@ -301,15 +308,15 @@ for dii in datelist:
                     dailyaod = np.mean(aod[filt2==1,i870])
                     stddev = np.std(aod[filt2==1,i870], ddof=1) 
                     nobs1 = sum(filt2==1)
-                    if verb: print(f'[{nloop}] daily mean AOD 870 = {dailyaod:5.4f}   3*sd = {3*stddev:5.4f}    n = {nobs1}')
+                    if args.verbose: print(f'[{nloop}] daily mean AOD 870 = {dailyaod:5.4f}   3*sd = {3*stddev:5.4f}    n = {nobs1}')
             
                     check3sd=False
                     for istack in np.unique(stackidx[stackidx>0]):
                         # stack should be within 3sd of daily mean
                         diff = abs(np.mean(aod[stackidx==istack,i870]) - dailyaod)
-                        if verb:print('[{}  {}  {}]  diff = {:5.4f}'.format(*datetime[stackidx==istack], diff))
+                        if args.verbose:print('[{}  {}  {}]  diff = {:5.4f}'.format(*datetime[stackidx==istack], diff))
                         if  diff > 3*stddev:
-                            if verb: print('[{}  {}  {}] outside 3sd'.format(*datetime[stackidx==istack]))
+                            if args.verbose: print('[{}  {}  {}] outside 3sd'.format(*datetime[stackidx==istack]))
                             filt2[stackidx==istack]=0
                             stackidx[stackidx==istack]=0
                             check3sd=True  
@@ -322,11 +329,11 @@ for dii in datelist:
             filt2[abs(stdUaod[:,i440] / aod[:,i440]) > relUaod440thres] = 0
             n2 = sum(filt2)
             filt2[abs(stdUangstrom48) > Uangstrom48thres] = 0 
-            print(f'{nobs} / {sum(filt1)} / {n1} / {n2} / {sum(filt2)}')
+            if args.verbose: print(f'{nobs} / {sum(filt1)} / {n1} / {n2} / {sum(filt2)}')
                              
             if sum(filt2)>0:            
                 out = " ".join([format(x, "6.4f") for x in np.mean(aod[filt2==1,:numlangch], axis=0)])
-                print(f'{obsdate}, '+out)
+                if args.verbose: print(f'{obsdate}, '+out)
                 if cirrusopt>0:
                     aodfile = rootpath+'PyOut/'+site+'/' + str(inst) + str(obsdate.year % 100).zfill(2) + str(obsdate.month).zfill(2) + str(obsdate.day).zfill(2) +'.aod_'+str(cirrusopt)
                 else:
@@ -347,7 +354,7 @@ for dii in datelist:
                                     str(int(cirrusflag[ii]))+'\n')
                                     
         else:
-            print(f'{obsdate} not enough obs passed filters')
+            if args.verbose: print(f'{obsdate} not enough obs passed filters')
     else:
         print(f'{obsdate} no lsu file')
         

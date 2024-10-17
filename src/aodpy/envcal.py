@@ -5,27 +5,30 @@ import os as os
 import math
 import fileread_module as fr
 import argparse
+import tomllib
 
 parser=argparse.ArgumentParser(description="Process raw environment files (.rnv)")
 parser.add_argument('-t', '--test', dest='configtoml', action='store_const', 
-                    const='../../tests/testconfig.toml', default='./config.toml',
+                    const='testconfig.toml', default='config.toml',
                     help='run on sample data and check output')
+parser.add_argument('-v', '--verbose',action='store_true')
 args=parser.parse_args()
 
 # langley config options
 with open(args.configtoml, "rb") as f:
     envconf = tomllib.load(f)
-print(envconf)    
 site = envconf['site']
 rootpath = envconf['rootpath']
 startdate = envconf['startdate']
 enddate = envconf['enddate']
+print(f'Run env for {site} from {startdate} to {enddate}')
+if args.verbose: print(envconf)
 
 #Logger clock error (+ve for slow) 
 ce=dt.timedelta(hours=0,minutes=0,seconds=0)
 
 configfile = rootpath+'config/'+site+'.cfn'
-config = fr.Read_Site_Configuration(configfile, startdate)
+config = fr.read_site_configuration(configfile, startdate)
 stationlat = config.attrs['Latitude'] 
 stationlon = config.attrs['Longitude'] 
 model = config.CimelModel
@@ -47,25 +50,22 @@ def write_env_header(filename, Station, TZ, Instrument, Barometer, Card, BaroCal
         f.write('# Card                  {0}            Cal Date {1}\n'.format(Card,VCalDate))
 
 
-caldir = rootpath+'/analog.cal_py/'
+caldir = rootpath+'/analog.cal/'
 
 if card>0:
-    vcal = pd.read_csv(caldir+'vcal.men', skiprows=3, header=None, names=['card','y','m','d','vcoef0','vcoef1'],  delimiter=r'\s+', usecols=range(0,6), index_col=0)
+    vcal = pd.read_csv(caldir+'vcal.menpy', skiprows=3, header=None, names=['card','y','m','d','vcoef0','vcoef1'],  delimiter=r'\s+', usecols=range(0,6), index_col=0)
     vcal = vcal.loc[card]
-    #vcoef = [vcal.vcoef0, vcal.vcoef1]
     
-    tcal = pd.read_csv(caldir+'tcal.men', skiprows=3, header=None, names=['y','m','d','tcoef0','tcoef1'], delimiter=r'\s+')
+    tcal = pd.read_csv(caldir+'tcal.menpy', skiprows=3, header=None, names=['y','m','d','tcoef0','tcoef1'], delimiter=r'\s+')
     tcal = tcal.loc[card]
-    #tcoef = [tcal.tcoef0, tcal.tcoef1]
 
     vcaldate = dt.date(int(vcal.y),int(vcal.m),int(vcal.d))
 else:
     vcaldate = []
     
 if config.Wind>0:
-    wcal = pd.read_csv(caldir+'wcal.men', skiprows=3, header=None, names=['y','m','d','wcoef0','wcoef1'], delimiter=r'\s+')
+    wcal = pd.read_csv(caldir+'wcal.menpy', skiprows=3, header=None, names=['y','m','d','wcoef0','wcoef1'], delimiter=r'\s+')
     wcal = wcal.loc[config.Wind]
-    #wcoef = [wcal.wcoef0, wcal.wcoef1]
     wcaldate = dt.date(int(wcal.y),int(wcal.m),int(wcal.d))
 else:
     wcaldate = []
@@ -76,11 +76,13 @@ if config.Baro>0:
     pcal_list.fillna(0, inplace=True)
     pcal = pcal_list.loc[(pcal_list.card==card) & (pcal_list.baro==config.Baro)]
     if len(pcal)==0:
-        # print(f'No P cal that matches both card number [{card}] and baro number [{config.Baro}]')
-        # print(pcal_list)
-        # pcal_idx = int(input('choose cal by entering the index from the following list'))
-        # pcal = pcal_list.loc[pcal_idx]
-        pcal = pcal_list[pcal_list.baro==config.Baro].iloc[0]
+        if args.configtoml=='testconfig.toml':
+            pcal = pcal_list[pcal_list.baro==config.Baro].iloc[0]
+        else:    
+            print(f'No P cal that matches both card number [{card}] and baro number [{config.Baro}]')
+            print(pcal_list)
+            pcal_idx = int(input('choose cal by entering the index from the following list'))
+            pcal = pcal_list.loc[pcal_idx]
     else:
         pcal = pcal.iloc[0]
         
@@ -90,13 +92,13 @@ else:
 
 datelist = pd.date_range(startdate,enddate,freq='d')  
 
-outrootpath = rootpath + 'PyOut/' 
-inrootpath = rootpath + 'agsdat/' 
+inrootpath = rootpath + 'agsdat/' + site + '/#' + str(inst).zfill(2) + '/' 
+outrootpath = rootpath + 'PyOut/' + site + '/' + str(inst).zfill(2) + '/' 
 
 for dii in datelist:
     obsdate = pd.to_datetime(dii).date()
     
-    subdir = site + '/#' + str(inst).zfill(2) + '/' + obsdate.strftime("%Y") +'/'+ obsdate.strftime("%m") +'/'+ obsdate.strftime("%d") + '/'
+    subdir = obsdate.strftime("%Y") +'/'+ obsdate.strftime("%m") +'/'+ obsdate.strftime("%d") + '/'
     fileroot = obsdate.strftime("%y%m%d")
     
 

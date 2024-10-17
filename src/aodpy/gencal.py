@@ -16,25 +16,28 @@ deg2rad = pi /180.0
 
 parser=argparse.ArgumentParser(description="Apply general method to sun photometer triplet measuments (.sun files)")
 parser.add_argument('-t', '--test', dest='configtoml', action='store_const', 
-                    const='../../tests/testconfig.toml', default='./config.toml',
+                    const='testconfig.toml', default='config.toml',
                     help='run on sample data and check output')
+parser.add_argument('-v', '--verbose',action='store_true')
 args=parser.parse_args()
 
 # langley config options
 with open(args.configtoml, "rb") as f:
     genconf = tomllib.load(f)
-print(genconf)      
 site = genconf['site']
 rootpath = genconf['rootpath']
 startdate = genconf['startdate']
 enddate = genconf['enddate']
-calepoch = genconf['gencal']['calepoch']
-fitV0 = genconf['gencal']['fitV0']
-clockfix = genconf['gencal']['clockfix']
-MaxSdevFit = genconf['gencal']['MaxSdevFit']
-UseRefChannel4QA = genconf['gencal']['UseRefChannel4QA']
-calfile_in =  genconf['gencal']['calfile_in']
-refchan = genconf['gencal']['refchannel']
+ozoneopt = genconf['ozoneopt']
+calepoch = genconf['cal']['calepoch']
+fitV0 = genconf['cal']['fitV0']
+clockfix = genconf['cal']['clockfix']
+MaxSdevFit = genconf['cal']['MaxSdevFit']
+UseRefChannel4QA = genconf['cal']['UseRefChannel4QA']
+calfile_in =  genconf['cal']['calfile_in']
+refchan = genconf['cal']['refchannel']
+print(f'Run gencal for {site} from {startdate} to {enddate}')
+if args.verbose: print(genconf)
 
 configfile = rootpath+'config/'+site+'.cfn'
 config = fr.read_site_configuration(configfile, startdate)
@@ -49,16 +52,24 @@ iref = atm.wavelength[model-1].index(refchan)
 
 calperiod_filename = str(inst) + str(startdate.year % 100).zfill(2) + str(startdate.month).zfill(2) + str(enddate.month).zfill(2)
 
-cut = fr.read_adj_file(rootpath + 'suncals/#' + str(inst) +'/#' + calperiod_filename + '.cut', 'AmPm')
+cutfile = rootpath + 'suncals/' + str(inst).zfill(2) +'/' + calperiod_filename + '.cut'
+if os.path.isfile(cutfile):
+    cut = fr.read_adj_file(cutfile, 'AmPm')
+    usecut = True
+else:
+    usecut = False
+    print('no cut file')
 
-if clockfix: clk = fr.read_adj_file(rootpath + 'suncals/#' + str(inst) +'/#' + calperiod_filename + '.clk', 'timecorr')
+if clockfix: clk = fr.read_adj_file(rootpath + 'suncals/' + str(inst) +'/' + calperiod_filename + '.clk', 'timecorr')
 
-verb=False
-
-cal = fr.read_cal(rootpath+'suncals/'+calfile_in[0:3]+'/'+calfile_in)
+cal = fr.read_cal(rootpath+'suncals/'+str(inst).zfill(2)+'/'+calfile_in)
 numlangleychannels = cal.attrs['numlangleychannels']
 
-o3 = fr.read_bom_ozone2011(rootpath+'ozone/'+site+'.o3')
+ozonefile = rootpath+'ozone/'+site+'.o3'
+if os.path.isfile(ozonefile) and ozoneopt:
+    o3 = fr.read_bom_ozone2011(ozonefile)
+else:
+    print('using default ozone: 250 DU')
 
 i440 = 1 - 1
 i670 = 2 - 1
@@ -77,8 +88,8 @@ datelist = pd.date_range(startdate,enddate,freq='d')
 
 for dii in datelist:
     obsdate = pd.to_datetime(dii).date()
-    if verb: print('----'+obsdate.strftime("%Y/%m/%d")+'----')
-    filedir = site+'/#'+str(inst)+'/'+str(obsdate.year)+'/'+str(obsdate.month).zfill(2)+'/'+str(obsdate.day).zfill(2)+'/'
+    if args.verbose: print('----'+obsdate.strftime("%Y/%m/%d")+'----')
+    filedir = site+'/#'+str(inst).zfill(2)+'/'+str(obsdate.year)+'/'+str(obsdate.month).zfill(2)+'/'+str(obsdate.day).zfill(2)+'/'
     fileroot = obsdate.strftime("%y%m%d")
 
     # photometer data
@@ -91,27 +102,30 @@ for dii in datelist:
         sundata = sundata.loc[startlocalday:endlocalday]
         nobs = len(sundata)
     else:
-        print(f'no obs on {obsdate}')
+        if args.verbose: print(f'no obs on {obsdate}')
         continue
         
     # get ozone for the day
-    if sum(o3['date']==obsdate): # daily ozone available
-        ozonecolumn =  (o3.loc[o3['date']==obsdate].ozone / 1000.0).iloc[0]
-    else: # use monthly mean
-        if verb: print('use monthly mean o3')
-        o3m = o3.loc[(pd.to_datetime(o3['date']).dt.month==obsdate.month) & 
-                     (pd.to_datetime(o3['date']).dt.year==obsdate.year)].ozone
-        ozonecolumn = sum(o3m)/len(o3m) / 1000.0
+    if ozoneopt:
+        if sum(o3['date']==obsdate): # daily ozone available
+            ozonecolumn =  (o3.loc[o3['date']==obsdate].ozone / 1000.0).iloc[0]
+        else: # use monthly mean
+            if args.verbose: print('use monthly mean o3')
+            o3m = o3.loc[(pd.to_datetime(o3['date']).dt.month==obsdate.month) & 
+                         (pd.to_datetime(o3['date']).dt.year==obsdate.year)].ozone
+            ozonecolumn = sum(o3m)/len(o3m) / 1000.0
+    else:
+        ozonecolumn = 0.25
 
     # Pressure data
     #presfile = rootpath + 'agsdat/' + filedir + fileroot + '.hpa'  # date formats will be different
-    presfile = rootpath + 'PyOut/' + filedir  + fileroot + '.hpa'
-    p = fr.read_pressure_file(presfile)
+    presfile = rootpath + 'PyOut/' + filedir.replace('#','')  + fileroot + '.hpa'
+    p = fr.read_pressure_file(args.verbose, presfile)
 
     # Black record
     blkfile = rootpath+'agsdat/'+filedir+fileroot+'.blk'
     if os.path.isfile(blkfile):
-        print(f'blackfile : {blkfile}')
+        if args.verbose: print(f'blackfile : {blkfile}')
         blksun = read_black_record(blkfile,model)
     else:
         blksun = [0] * numchannels
@@ -133,12 +147,11 @@ for dii in datelist:
     numsuntriples = [nobs,0,0] # total/morning/afternoon
     
     for k in range(nobs): 
-        #print(f'[{j}]')
         rayleighOD = np.empty([numchannels])
 
         obs = sundata.iloc[k]
 
-        datetime = dt.datetime.combine(obs['Date'] , obs['Time'])
+        datetime = obs.name
         if clockfix: datetime = datetime - dt.timedelta(seconds=timecorr)
             
         if len(p)==0:
@@ -177,7 +190,6 @@ for dii in datelist:
                 airmass[k,i,n] = ( airmassODrayleigh[k,i,n] + airmassODaerosol[k,i,n] + airmassODozone[k,i,n]) \
                                 / (rayleighOD[n] + 0.03 + ozoneOD[n])       
 
-                #print('volt = ',volt)
                 if volt[k,i,n]>0:
                     voltlog[k,i,n] = math.log(volt[k,i,n]) 
                 else:
@@ -186,34 +198,32 @@ for dii in datelist:
     tripletmean = np.mean(volt, axis=1)
     tripletCv = np.divide(np.std(volt, axis=1, ddof=1), tripletmean, out=np.ones_like(tripletmean)*99.99, where=tripletmean != 0)  * 100.0
     
-    if verb: print('General method, processing...')
+    if args.verbose: print('General method, processing...')
     nstart = [0,0]
     nend = [0,0]
     for iap in [1,2]:
         nstart[iap-1] = numsuntriples[1] * (iap - 1)
         nend[iap-1] = nstart[iap-1] + numsuntriples[iap]
-    if verb: print(f'total:{numsuntriples[0]} triples, {numsuntriples[1]} am [{nstart[0]}:{nend[0]}], {numsuntriples[2]} pm [{nstart[1]}:{nend[1]}]')
+    if args.verbose: print(f'total:{numsuntriples[0]} triples, {numsuntriples[1]} am [{nstart[0]}:{nend[0]}], {numsuntriples[2]} pm [{nstart[1]}:{nend[1]}]')
     
-    lnV0ref=lnV0ref_1AU-2.0*math.log(DSunEarth)
+    lnV0ref = lnV0ref_1AU-2.0*math.log(DSunEarth)
     MinSunTriples = 10
     for iap in [0,1]: #  morning / afternoon
         
         # cutList
-        if dii in cut.index:
-            if ampm[iap] in cut.loc[dii].AmPm:
-                include=False
-                print(f'cut {obsdate} {ampm[iap]}')
-            else:
-                include=True
-        else:        
-            include=True
+        include = True
+        if usecut:
+            if dii in cut.index:
+                if ampm[iap] in cut.loc[dii].AmPm:
+                    include = False
+                    if args.verbose: print(f'cut {obsdate} {ampm[iap]}')
         
         if include:
             if numsuntriples[iap]>=MinSunTriples :
-                SpreadFlag, numOk, indOk = fit.CheckTripletCv(verb, numsuntriples[iap+1], nstart[iap],airmass[:,1,i870],tripletCv[:,i870])
+                SpreadFlag, numOk, indOk = fit.CheckTripletCv(args.verbose, numsuntriples[iap+1], nstart[iap],airmass[:,1,i870],tripletCv[:,i870])
               
                 if (numOk>=MinSunTriples) & SpreadFlag :
-                    if verb: print(' Passed triplet cv langley filter')
+                    if args.verbose: print(' Passed triplet cv langley filter')
 
                     n=numchannels
                     V = np.empty([numOk*3])
@@ -224,16 +234,16 @@ for dii in datelist:
                     i=0 # Singlet index        
                     for k in range(numOk):              # Ok Triplet index
                         for j in range(3):                     # Triplet components                      
-                            X[i,:]=airmass[indOk[k],j,:]
-                            Y[i,:]=voltlog[indOk[k],j,:]
+                            X[i,:] = airmass[indOk[k],j,:]
+                            Y[i,:] = voltlog[indOk[k],j,:]
                             #V=Aerosol airmass
-                            V[i]=atm.getairmass(2,solzenapp[indOk[k],j])
+                            V[i] = atm.getairmass(2,solzenapp[indOk[k],j])
                             #W=m*aod at reference wavelength
-                            W[i]=lnV0ref - voltlog[indOk[k],j,iref] - airmassODrayleigh[indOk[k],j,iref] - airmassODozone[indOk[k],j,iref]
+                            W[i] = lnV0ref - voltlog[indOk[k],j,iref] - airmassODrayleigh[indOk[k],j,iref] - airmassODozone[indOk[k],j,iref]
                             #Z=Dependent variable for regression
-                            Z[i,:]=voltlog[indOk[k],j,:] + airmassODrayleigh[indOk[k],j,:] + airmassODozone[indOk[k],j,:]
-                            i=i+1
-                    npts_ap=i
+                            Z[i,:] = voltlog[indOk[k],j,:] + airmassODrayleigh[indOk[k],j,:] + airmassODozone[indOk[k],j,:]
+                            i = i+1
+                    npts_ap = i
 
             #         Until 19/12/2011 this used i870 as the reference channel,
             #         on the thinking that data quality should scale
@@ -246,18 +256,18 @@ for dii in datelist:
             #         of selecting either the actual reference channel or the
             #         870nm channel (for historical compatibility).                        
                     if  UseRefChannel4QA:
-                        QARef=iref
+                        QARef = iref
                     else: 
-                        QARef=i870
+                        QARef = i870
     
-                    SpreadFlag,FitFlag,indOk,npts_ap = fit.CheckFitQuality(verb,npts_ap,X,Y,QARef,MaxSdevFit)
+                    SpreadFlag,FitFlag,indOk,npts_ap = fit.CheckFitQuality(args.verbose,npts_ap,X,Y,QARef,MaxSdevFit)
                     
-                    V=V[indOk]
-                    W=W[indOk]
-                    Z=Z[indOk,:] 
+                    V = V[indOk]
+                    W = W[indOk]
+                    Z = Z[indOk,:] 
     
                     if SpreadFlag & FitFlag: 
-                        if verb: print(' Passed fit quality filter')
+                        if args.verbose: print(' Passed fit quality filter')
                         weight = [1.0] * npts_ap
                         intercept = np.zeros(numchannels)  
                         slope = np.zeros(numchannels)
@@ -269,15 +279,16 @@ for dii in datelist:
                         dayssinceepoch.append((obs['Date'] - pd.Timestamp(calepoch)).days)
 
                         numlangleys += 1
-                        print(f'{obsdate} {ampm[iap]}')
+                        if args.verbose: print(f'{obsdate} {ampm[iap]}')
                         
                     else:
-                        if verb: print(' Failed fit quality filter')
+                        if args.verbose: print(' Failed fit quality filter')
                 else:
-                    if verb: print(' Failed triplet cv filter') 
+                    if args.verbose: print(' Failed triplet cv filter') 
             else:
-                if verb: print(' Insufficient triplets')
+                if args.verbose: print(' Insufficient triplets')
 
+print(f'{numlangleys} langleys for general method in period') 
 lnV0glob = np.vstack(lnV0glob)
 
 lnV0coef0 = np.zeros(numchannels)
@@ -296,7 +307,7 @@ else:
     lnV0conf = np.mean(lnV0glob, axis=0)
     lnV0coef.append(cal.lnV0coef0[iWV])
     
-genfile = rootpath+'PyOut/' + site + '/suncal/' + calperiod_filename + caloutext
+genfile = rootpath+'suncals/'+str(inst).zfill(2)+'/' + calperiod_filename + caloutext
 calfile = open(genfile, 'w')
 calfile.write(f'# Calibration file generated from General Method between:\n'
        f'#{startdate.year:5d}{startdate.month:3d}{startdate.day:3d} and\n'
@@ -305,9 +316,8 @@ calfile.write(f'# Calibration file generated from General Method between:\n'
        f'#{model:5d}        -- Model number     \n'
        f'#{numlangleychannels:5d}        -- Number of Langley wavelengths\n'
        f'#{numlangleys:5d}        -- Number of Langley intervals in period\n'
-       f'#{numgencyc:5d}        -- Number of General Method cycles applied\n'
-       f'#{calepoch}  -- Calibration epoch\n')
-
+       '#    1       -- Number of General Method cycles applied\n'
+       f'#{calepoch.year:5d}{calepoch.month:3d}{calepoch.day:3d}  -- Calibration epoch\n')
 
 calfile.write(f'# Wavel(nm) Order      {" ".join(f"LnV0({i})   " for i in range(cal.order[0] + 1))}     Erms\n')
 
