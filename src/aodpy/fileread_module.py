@@ -46,13 +46,13 @@ def dateint2dateclass(d):
 
 
 
-def read_pressure_file(presfile):
+def read_pressure_file(verb, presfile):
     prescolumnnames=['Date','Time','P_UnTCorrect','Tmean','DelP','Pressure']
     p = pd.read_csv(presfile, skiprows=9, header=None, delimiter=r'\s+', names=prescolumnnames, index_col=False)
     p['DateTime'] = pd.to_datetime(p['Date'] + ' ' + p['Time'])
     p = p.set_index('DateTime')
     if np.any(np.diff(p.index.to_list())<dt.timedelta(hours=0)): 
-        print(f'time disordered in pressure file: {presfile}')
+        if verb: print(f'time disordered in pressure file: {presfile}')
         p.sort_index(inplace=True)       # jb1 160105 has a dicontinuity, indicate problem?
     if len(p)==0:
         print(f'problem with pressure file: {presfile}')
@@ -123,11 +123,10 @@ def read_triple_sun_record(filename, Model):
     elif Model==8:
         order = [4,3,2,1,5,7,10,6,8]
 
-    s = pd.read_csv(filename, header=None)
-    s.rename(columns={32:'Temperature'}, inplace=True)
-    s['Date'] = s[0].apply(lambda x: dt.datetime.strptime(x,'%d:%m:%y'))
-    s['Time'] = s[1].apply(lambda x: dt.datetime.strptime(x,'%H:%M:%S').time())
-    s['DateTime'] = [dt.datetime.combine(d,t) for d,t in zip(s['Date'],s['Time'])]
+    s = pd.read_csv(filename, header=None).drop_duplicates()
+    s.rename(columns={0:'Date',1:'Time',32:'Temperature'}, inplace=True)
+    s['Date'] = pd.to_datetime(s['Date'], format='%d:%m:%y')
+    s['DateTime'] = s['Date'] + pd.to_timedelta(s['Time'])
     s = s.set_index('DateTime')
     
     for ii,ch in enumerate(order):
@@ -163,11 +162,10 @@ def read_single_sun_record(filename, Model):
     elif Model==8:
         order = [4,3,2,1,5,7,10,6,8]
   
-    s = pd.read_csv(filename, header=None)
+    s = pd.read_csv(filename, header=None).drop_duplicates()
     s.rename(columns={0:'Date',1:'Time',12:'Temperature'}, inplace=True)
-    #s['Date'] = s[0].apply(lambda x: dt.datetime.strptime(x,'%d:%m:%y').date())
-    #s['Time'] = s[1].apply(lambda x: dt.datetime.strptime(x,'%H:%M:%S').time())
-    s['DateTime'] = [dt.datetime.combine(dt.datetime.strptime(d,'%d:%m:%y').date(),dt.datetime.strptime(t,'%H:%M:%S').time()) for d,t in zip(s['Date'],s['Time'])]
+    s['Date'] = pd.to_datetime(s['Date'], format='%d:%m:%y')
+    s['DateTime'] = s['Date'] + pd.to_timedelta(s['Time'])
     s = s.set_index('DateTime')    
     
     for ii,ch in enumerate(order):
