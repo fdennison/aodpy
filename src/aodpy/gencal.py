@@ -45,7 +45,8 @@ stationlat = config.attrs['Latitude'] #-12.6607
 stationlon = config.attrs['Longitude'] #132.8931
 model = config.CimelModel
 inst = config.CimelNumber
-numchannels = 10
+numchannels = len(atm.wavelength[model-1])
+numlangleychannels = numchannels - 1
 
 caloutext = '.'+str(refchan)
 iref = atm.wavelength[model-1].index(refchan)
@@ -60,22 +61,27 @@ else:
     usecut = False
     print('no cut file')
 
-if clockfix: clk = fr.read_adj_file(rootpath + 'suncals/' + str(inst) +'/' + calperiod_filename + '.clk', 'timecorr')
-
-cal = fr.read_cal(rootpath+'suncals/'+str(inst).zfill(2)+'/'+calfile_in)
-numlangleychannels = cal.attrs['numlangleychannels']
+if clockfix:
+    clk = fr.read_adj_file(rootpath + 'suncals/' + str(inst).zfill(2) +'/' + calperiod_filename + '.clk', 'timecorr')
 
 ozonefile = rootpath+'ozone/'+site+'.o3'
 if os.path.isfile(ozonefile) and ozoneopt:
     o3 = fr.read_bom_ozone2011(ozonefile)
 else:
     print('using default ozone: 250 DU')
+    
+if calfile_in=='':  # leave blank for default naming convention
+    calfile_in = calperiod_filename+'.lcl'
+cal = fr.read_cal(rootpath+'suncals/'+calfile_in[0:-10].zfill(2)+'/'+calfile_in)
+numlangleychannels = cal.attrs['numlangleychannels']
 
-i440 = 1 - 1
-i670 = 2 - 1
-i870 = 3 - 1
-i1020 = 4 - 1
-iWV = 10 - 1
+o3 = fr.read_bom_ozone2011(rootpath+'ozone/'+site+'.o3')
+
+i440 = atm.wavelength[model-1].index(440)  # 1-1
+i670 = atm.wavelength[model-1].index(670)  #2 - 1
+i870 = atm.wavelength[model-1].index(870)  #3 - 1
+i1020 = atm.wavelength[model-1].index(1020)#4 - 1
+iWV = atm.wavelength[model-1].index(936)   #10 - 1
 
 defaultpressure = 1013.0 # hPa
 
@@ -126,7 +132,7 @@ for dii in datelist:
     blkfile = rootpath+'agsdat/'+filedir+fileroot+'.blk'
     if os.path.isfile(blkfile):
         if args.verbose: print(f'blackfile : {blkfile}')
-        blksun = read_black_record(blkfile,model)
+        blksun = fr.read_black_record(blkfile,model)
     else:
         blksun = [0] * numchannels
 
@@ -135,8 +141,15 @@ for dii in datelist:
     lnV0ref_1AU = cal.iloc[iref].lnV0coef0 +  cal.iloc[iref].lnV0coef1 * nday
     
     # Clock Fix
-    if clockfix:  timecorr = round(clk.asof(dii).timecorr)
-        
+    if clockfix:  
+        timecorr = clk.asof(dii).timecorr  # this is an integer in fortran version, hence use of round function
+                                                            # there is no good reason to round this, so perhaps remove this in the future
+                                                            # however it will substansially change output
+        if np.isnan(timecorr):
+            timecorr = clk.timecorr.iloc[0]   # prior to first entry in clk file
+        else:
+            timecorr = round(timecorr)
+
     volt = np.zeros([nobs,3,numchannels])
     voltlog = np.empty([nobs,3,numchannels])
     airmass  = np.empty([nobs,3,numchannels])
@@ -177,11 +190,11 @@ for dii in datelist:
             ozoneOD = [x*ozonecolumn for x in atm.ozonecoef[model-1]]            
 
             # Signal 
-            for n in range(numchannels):
+            for n, wl in enumerate(atm.wavelength[model-1]):
                 
-                volt[k,i,n] = obs['Ch'+str(n+1)][i] - blksun[n]
+                volt[k,i,n] = obs['ch'+str(int(wl))][i] - blksun[n]
                 
-                rayleighOD[n] = atm.rayleigh(atm.wavelength[model-1][n], pr)           
+                rayleighOD[n] = atm.rayleigh(wl, pr)           
 
                 #Assume aod of 0.03 to calculate airmass. Refine later.
                 airmassODrayleigh[k,i,n] = atm.getairmass(1,solzenapp[k,i]) * rayleighOD[n]
@@ -210,12 +223,12 @@ for dii in datelist:
     MinSunTriples = 10
     for iap in [0,1]: #  morning / afternoon
         
+        include=True
         # cutList
-        include = True
         if usecut:
             if dii in cut.index:
                 if ampm[iap] in cut.loc[dii].AmPm:
-                    include = False
+                    include=False
                     if args.verbose: print(f'cut {obsdate} {ampm[iap]}')
         
         if include:
@@ -307,7 +320,7 @@ else:
     lnV0conf = np.mean(lnV0glob, axis=0)
     lnV0coef.append(cal.lnV0coef0[iWV])
     
-genfile = rootpath+'suncals/'+str(inst).zfill(2)+'/' + calperiod_filename + caloutext
+genfile = rootpath+'suncals/' + str(inst).zfill(2)+'/'+ calperiod_filename + caloutext
 calfile = open(genfile, 'w')
 calfile.write(f'# Calibration file generated from General Method between:\n'
        f'#{startdate.year:5d}{startdate.month:3d}{startdate.day:3d} and\n'

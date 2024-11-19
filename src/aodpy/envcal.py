@@ -64,7 +64,7 @@ else:
     vcaldate = []
     
 if config.Wind>0:
-    wcal = pd.read_csv(caldir+'wcal.menpy', skiprows=3, header=None, names=['y','m','d','wcoef0','wcoef1'], delimiter=r'\s+')
+    wcal = pd.read_csv(caldir+'wcal.menpy', skiprows=2, header=None, names=['y','m','d','wcoef0','wcoef1'], delimiter=r'\s+')
     wcal = wcal.loc[config.Wind]
     wcaldate = dt.date(int(wcal.y),int(wcal.m),int(wcal.d))
 else:
@@ -134,8 +134,8 @@ for dii in datelist:
         
         if config.Wind>0:
             env['WindVmean'] = wcal.wcoef0 + wcal.wcoef1 * env.WVmean_in / 100
-            env['WindVmin'] = WindV.mean - wcal.wcoef1 * env.WVmin_in / 100
-            env['WindVmax'] = WindV.mean + wcal.wcoef1 * env.WVmax_in / 100
+            env['WindVmin'] = env.WindVmean - wcal.wcoef1 * env.WVmin_in / 100
+            env['WindVmax'] = env.WindVmean + wcal.wcoef1 * env.WVmax_in / 100
             env['WindVsd'] = wcal.wcoef1 * env.WVsd_in / 100
         else:
             env['WindVmean'] = -1.0
@@ -147,8 +147,8 @@ for dii in datelist:
             env['WindDmean'] = env.WDmean_in / 100
             # Boom points west not north, so rotate axes by -90 (+270) degrees.
             env['WindDmean'] = (env.WindDmean + 270.0) % 360.0
-            env['WindDmin'] = env.WDmean - env.WDmin_in / 100
-            env['WindDmax'] = env.WDmean + env.WDmax_in / 100
+            env['WindDmin'] = env.WindDmean - env.WDmin_in / 100
+            env['WindDmax'] = env.WindDmean + env.WDmax_in / 100
             env['WindDsd'] = env.WDsd_in / 100
         else:
             env['WindDmean'] = 0

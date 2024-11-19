@@ -56,6 +56,9 @@ model = config.CimelModel
 inst = config.CimelNumber
 
 #cal = fr.read_cal(rootpath+'suncals/#'+calfile_in[1:-10].zfill(2)+'/'+calfile_in)
+calperiod_filename = str(inst) + str(startdate.year % 100).zfill(2) + str(startdate.month).zfill(2) + str(enddate.month).zfill(2)
+if calfile_in=='':  # leave blank for default naming convention and 500nm ref
+    calfile_in = calperiod_filename+'.500'
 cal = fr.read_cal(rootpath+'suncals/'+str(inst).zfill(2)+'/'+calfile_in)
 #See p 87 of 2006/7 notebook
 #This kernel has to be divided by airmass to give U(aod)
@@ -65,17 +68,15 @@ if cal.attrs['numlangleys']>0:
 else:
     cal['stdUaod1am'] = usignal
 
-if clockfix:
-    calperiod_filename = str(inst) + str(startdate.year % 100).zfill(2) + str(startdate.month).zfill(2) + str(enddate.month).zfill(2)
-    clk = fr.read_adj_file(rootpath + 'suncals/' + str(inst) +'/' + calperiod_filename + '.clk', 'timecorr')
+if clockfix: clk = fr.read_adj_file(rootpath + 'suncals/' + str(inst).zfill(2) +'/' + calperiod_filename + '.clk', 'timecorr')
 
-i440 = 1 - 1
-i670 = 2 - 1
-i870 = 3 - 1
-i1020 = 4 - 1
-iWV = 10 - 1
+i440 = atm.wavelength[model-1].index(440)  # 1-1
+i670 = atm.wavelength[model-1].index(670)  #2 - 1
+i870 = atm.wavelength[model-1].index(870)  #3 - 1
+i1020 = atm.wavelength[model-1].index(1020)#4 - 1
+iWV = atm.wavelength[model-1].index(936)   #10 - 1
+numchannels = len(atm.wavelength[model-1])
 
-numchannels = 10
 stacksize=3
 acoef = 0.6548
 bcoef = 0.574
@@ -105,14 +106,8 @@ for dii in datelist:
             ozonecolumn = 0.25
     
         # Pressure data
-        #presfile = rootpath + 'agsdat/' + filedir + fileroot + '.hpa'  # date formats will be different
-        #if os.path.isfile(presfile):
-        #    p = fr.read_old_pressure_file(args.verbose, presfile)
-        #else:
-        #    p=[]
-        presfile = rootpath + '/PyOut/' + filedir.replace('#','') + fileroot + '.hpa'
-        p = fr.read_pressure_file(args.verbose, presfile)
-    
+        presfile = rootpath + 'PyOut/' + filedir.replace('#','')  + fileroot + '.hpa'
+        p = fr.read_pressure_file(args.verbose, presfile)    
     
         # photometer data
         sundata = fr.read_single_sun_record(filename, model)
@@ -122,7 +117,7 @@ for dii in datelist:
         blkfile = rootpath+'agsdat/'+filedir+fileroot+'.blk'
         if os.path.isfile(blkfile):
             if args.verbose: print(f'blackfile : {blkfile}')
-            blksun = read_black_record(blkfile,model)
+            blksun = fr.read_black_record(blkfile,model)
         else:
             blksun = [0] * numchannels
 
@@ -170,15 +165,15 @@ for dii in datelist:
             ozoneOD = [x*ozonecolumn for x in atm.ozonecoef[model-1]]  
             extraOD = [0]*numchannels 
 
-            for n in range(numchannels):
-                rayleighOD = atm.rayleigh(atm.wavelength[model-1][n], pr)  
+            for n, wl in enumerate(atm.wavelength[model-1]):
+                rayleighOD = atm.rayleigh(wl, pr)  
                 #Assume aod of 0.03 to calculate airmass. Refine later.
                 airmass[iobs,n] = (atm.getairmass(1,solzenapp) * rayleighOD + \
                                 atm.getairmass(2,solzenapp) * 0.03 + \
                                 atm.getairmass(3,solzenapp) * ozoneOD[n] ) \
                                 / (rayleighOD + 0.03 + ozoneOD[n]) 
 
-                volt[iobs,n] = sundata.iloc[iobs]['Ch'+str(n+1)] - blksun[n]
+                volt[iobs,n] = sundata.iloc[iobs]['ch'+str(int(wl))] - blksun[n]
                 if volt[iobs,n]>0:
                     voltlog = math.log(volt[iobs,n]) 
                 else:

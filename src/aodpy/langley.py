@@ -46,9 +46,8 @@ stationlat = config.attrs['Latitude']
 stationlon = config.attrs['Longitude'] 
 model = config.CimelModel
 inst = config.CimelNumber
-
-numchannels = 10
-numlangleychannels = 9
+numchannels = len(atm.wavelength[model-1])
+numlangleychannels = numchannels - 1
 
 calperiod_filename = str(inst) + str(startdate.year % 100).zfill(2) + str(startdate.month).zfill(2) + str(enddate.month).zfill(2)
 
@@ -74,11 +73,11 @@ if langleytable:
     with open(ltbfile, 'w') as f:
         f.write('datetime CalD T P(hPa)  N '+' '.join([format(f'LV0{str(int(x)).zfill(4)}', "6s") for x in atm.wavelength[model-1]])+'\n')
 
-i440 = 1 - 1
-i670 = 2 - 1
-i870 = 3 - 1
-i1020 = 4 - 1
-iWV = 10 - 1
+i440 = atm.wavelength[model-1].index(440)  # 1-1
+i670 = atm.wavelength[model-1].index(670)  #2 - 1
+i870 = atm.wavelength[model-1].index(870)  #3 - 1
+i1020 = atm.wavelength[model-1].index(1020)#4 - 1
+iWV = atm.wavelength[model-1].index(936)   #10 - 1
 
 numlangleys=0
 dayssinceepoch=[]
@@ -98,6 +97,9 @@ for dii in datelist:
     sunfile = rootpath+'agsdat/'+filedir+fileroot+'.sun'
     if os.path.isfile(sunfile):
         sundata = fr.read_triple_sun_record(sunfile, model)
+        if sundata.empty:
+            if args.verbose: print(f'skipping {obsdate}')
+            continue
         startlocalday = dt.datetime.combine(obsdate,dt.time(4,0,0)) - dt.timedelta(hours=config.attrs['TimeZone'])
         endlocalday = dt.datetime.combine(obsdate,dt.time(21,0,0)) - dt.timedelta(hours=config.attrs['TimeZone'])
         n1=len(sundata)
@@ -128,14 +130,19 @@ for dii in datelist:
     blkfile = rootpath+'agsdat/'+filedir+fileroot+'.blk'
     if os.path.isfile(blkfile):
         if args.verbose: print(f'blackfile : {blkfile}')
-        blksun = read_black_record(blkfile,model)
+        blksun = fr.read_black_record(blkfile,model)
     else:
         blksun = [0] * numchannels
 
     # Clock Fix
-    if clockfix:  timecorr = round(clk.asof(dii).timecorr)  # this is an integer in fortran version, hence use of round function
+    if clockfix:  
+        timecorr = clk.asof(dii).timecorr  # this is an integer in fortran version, hence use of round function
                                                             # there is no good reason to round this, so perhaps remove this in the future
                                                             # however it will substansially change output
+        if np.isnan(timecorr):
+            timecorr = clk.timecorr.iloc[0]   # prior to first entry in clk file
+        else:
+            timecorr = round(timecorr)
   
     volt = np.zeros([nobs,3,numchannels])
     voltlog = np.empty([nobs,3,numchannels])
@@ -182,11 +189,11 @@ for dii in datelist:
             ozoneOD = [x*ozonecolumn for x in atm.ozonecoef[model-1]]            
 
             # Signal 
-            for n in range(numchannels):
+            for n, wl in enumerate(atm.wavelength[model-1]):
                 
-                volt[k,i,n] = obs['Ch'+str(n+1)][i] - blksun[n]
+                volt[k,i,n] = obs['ch'+str(int(wl))][i] - blksun[n]
                 
-                rayleighOD[n] = atm.rayleigh(atm.wavelength[model-1][n], pk)           
+                rayleighOD[n] = atm.rayleigh(wl, pk)           
 
                 #Assume aod of 0.03 to calculate airmass. Refine later.
                 airmassODrayleigh[k,i,n] = atm.getairmass(1,solzenapp[k,i]) * rayleighOD[n]
@@ -290,7 +297,7 @@ for dii in datelist:
                         if args.verbose: print(f'{obsdate} {ampm[iap]}  {npts_ap} {meanpressure:6.1f}')
                         if langleytable:
                             with open(ltbfile, 'a') as f:
-                                f.write( f'{obsdate} {cald} {ampm[iap]} {meanpressure:6.1f} {npts_ap} ' + " ".join([format(x, "6.4f") for x in intercept]) +'\n')    
+                                f.write( f'{obsdate} {cald} {ampm[iap]} {meanpressure:6.1f} {npts_ap} ' + " ".join([format(x, "6.4f") for x in intercept]) +'\n')
                     else: # SpreadFlag & FitFlag:  
                         if args.verbose: print(' Failed fit quality filter')
                 else:  # (numOk>=MinSunTriples) & SpreadFlag :
@@ -356,5 +363,6 @@ if numlangleys>0:
 #    figfile = rootpath+'suncals/'+str(inst).zfill(2)+'/'+calperiod_filename+'.lcl.ps'
 #    plt.savefig(figfile,bbox_inches='tight')
 #    print(f'Figure written to: {figfile}, check for outliers')
-
+if langleytable:
+    print(f'Langley table written to: {ltbfile}')
 print(f'Langley calibration file written to: {langleyfile}')    
