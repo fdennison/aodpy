@@ -28,15 +28,14 @@ site = genconf['site']
 rootpath = genconf['rootpath']
 startdate = genconf['startdate']
 enddate = genconf['enddate']
-ozoneopt = genconf['ozoneopt']
-calepoch = genconf['cal']['calepoch']
+ozonedir = genconf['ozonedir']
 fitV0 = genconf['cal']['fitV0']
 clockfix = genconf['cal']['clockfix']
 MaxSdevFit = genconf['cal']['MaxSdevFit']
 UseRefChannel4QA = genconf['cal']['UseRefChannel4QA']
 calfile_in =  genconf['cal']['calfile_in']
 refchan = genconf['cal']['refchannel']
-print(f'Run gencal for {site} from {startdate} to {enddate}')
+print(f'Run gencal for {site} from {startdate} to {enddate}, ref chan = {refchan}')
 if args.verbose: print(genconf)
 
 configfile = rootpath+'config/'+site+'.cfn'
@@ -46,7 +45,7 @@ stationlon = config.attrs['Longitude'] #132.8931
 model = config.CimelModel
 inst = config.CimelNumber
 numchannels = len(atm.wavelength[model-1])
-numlangleychannels = numchannels - 1
+#numlangleychannels = numchannels - 1
 
 caloutext = '.'+str(refchan)
 iref = atm.wavelength[model-1].index(refchan)
@@ -62,30 +61,41 @@ else:
     print('no cut file')
 
 if clockfix:
-    clk = fr.read_adj_file(rootpath + 'suncals/' + str(inst).zfill(2) +'/' + calperiod_filename + '.clk', 'timecorr')
+    #clk = fr.read_adj_file(rootpath + 'suncals/' + str(inst).zfill(2) +'/' + calperiod_filename + '.clk', 'timecorr')
+    clk = fr.read_adj_file(rootpath + 'clockdrift/' + site + '.clk', 'timecorr')
 
-ozonefile = rootpath+'ozone/'+site+'.o3'
-if os.path.isfile(ozonefile) and ozoneopt:
+ozonefile = rootpath+ozonedir+site+'.o3'
+if os.path.isfile(ozonefile):
     o3 = fr.read_bom_ozone2011(ozonefile)
+    ozoneopt = True
 else:
+    ozoneopt = False
     print('using default ozone: 250 DU')
     
-if calfile_in=='':  # leave blank for default naming convention
-    calfile_in = calperiod_filename+'.lcl'
+if len(calfile_in)==3:  # if only lcl or wavelength then use default naming convention, otherwise must be whole filename
+    calfile_in = calperiod_filename +'.'+ calfile_in
 cal = fr.read_cal(rootpath+'suncals/'+calfile_in[0:-10].zfill(2)+'/'+calfile_in)
 numlangleychannels = cal.attrs['numlangleychannels']
+calepoch = cal.attrs['epoch']
+numgencyc = cal.attrs['numgencycles'] + 1
 
-o3 = fr.read_bom_ozone2011(rootpath+'ozone/'+site+'.o3')
+if model<=9:   # later models the 2nd channel is 675nm
+    lambda2 = 670
+else:
+    lambda2 = 675
 
+if model == 10:
+    ext = '.NSU'
+else:    
+    ext = '.sun'
+    
 i440 = atm.wavelength[model-1].index(440)  # 1-1
-i670 = atm.wavelength[model-1].index(670)  #2 - 1
+i670 = atm.wavelength[model-1].index(lambda2)  #2 - 1
 i870 = atm.wavelength[model-1].index(870)  #3 - 1
 i1020 = atm.wavelength[model-1].index(1020)#4 - 1
 iWV = atm.wavelength[model-1].index(936)   #10 - 1
 
 defaultpressure = 1013.0 # hPa
-
-numgencyc = 0
 numlangleys=0
 dayssinceepoch=[]
 lnV0glob=[]
@@ -102,6 +112,9 @@ for dii in datelist:
     sunfile = rootpath+'agsdat/'+filedir+fileroot+'.sun'
     if os.path.isfile(sunfile):
         sundata = fr.read_triple_sun_record(sunfile, model)
+        if sundata.empty or (sum(sundata.Valid==0)==0):  # Fortran does not have valid data check here - without it it seems to produce spurious data on days where all data is invalid
+            if args.verbose: print(f'skipping {obsdate}')
+            continue
         startlocalday = dt.datetime.combine(obsdate,dt.time(4,0,0)) - dt.timedelta(hours=config.attrs['TimeZone'])
         endlocalday = dt.datetime.combine(obsdate,dt.time(21,0,0)) - dt.timedelta(hours=config.attrs['TimeZone'])
         n1=len(sundata)
@@ -146,7 +159,7 @@ for dii in datelist:
                                                             # there is no good reason to round this, so perhaps remove this in the future
                                                             # however it will substansially change output
         if np.isnan(timecorr):
-            timecorr = clk.timecorr.iloc[0]   # prior to first entry in clk file
+            timecorr = round(clk.timecorr.iloc[0])   # prior to first entry in clk file
         else:
             timecorr = round(timecorr)
 
@@ -329,7 +342,7 @@ calfile.write(f'# Calibration file generated from General Method between:\n'
        f'#{model:5d}        -- Model number     \n'
        f'#{numlangleychannels:5d}        -- Number of Langley wavelengths\n'
        f'#{numlangleys:5d}        -- Number of Langley intervals in period\n'
-       '#    1       -- Number of General Method cycles applied\n'
+       f'#{numgencyc:5d}        -- Number of General Method cycles applied\n'
        f'#{calepoch.year:5d}{calepoch.month:3d}{calepoch.day:3d}  -- Calibration epoch\n')
 
 calfile.write(f'# Wavel(nm) Order      {" ".join(f"LnV0({i})   " for i in range(cal.order[0] + 1))}     Erms\n')

@@ -235,7 +235,8 @@ def read_cal(calfile):
         numgencycles = int(f.readline().rstrip().split()[1])
         d3 = [int(x) for x in f.readline().rstrip().split()[1:4]]
         cal_epoch = dt.date(d3[0],d3[1],d3[2])
-    cal.attrs = {'epoch':cal_epoch, 'numlangleys':numlangleys, 'numlangleychannels':numlangleychannels} 
+    cal.attrs = {'epoch':cal_epoch, 'numlangleys':numlangleys, 'numlangleychannels':numlangleychannels,
+                 'numgencycles':numgencycles} 
     return cal
 
 def read_black_record(filename, Model):

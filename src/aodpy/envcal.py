@@ -11,6 +11,8 @@ parser=argparse.ArgumentParser(description="Process raw environment files (.rnv)
 parser.add_argument('-t', '--test', dest='configtoml', action='store_const', 
                     const='testconfig.toml', default='config.toml',
                     help='run on sample data and check output')
+parser.add_argument('-b', '--batch', dest='batch', action='store_true',
+                    help='use this option when run in batch mode (disables interactive selection in baro config, defaults to select matching baro id)')
 parser.add_argument('-v', '--verbose',action='store_true')
 args=parser.parse_args()
 
@@ -76,7 +78,7 @@ if config.Baro>0:
     pcal_list.fillna(0, inplace=True)
     pcal = pcal_list.loc[(pcal_list.card==card) & (pcal_list.baro==config.Baro)]
     if len(pcal)==0:
-        if args.configtoml=='testconfig.toml':
+        if args.configtoml=='testconfig.toml' or args.batch==True:
             pcal = pcal_list[pcal_list.baro==config.Baro].iloc[0]
         else:    
             print(f'No P cal that matches both card number [{card}] and baro number [{config.Baro}]')

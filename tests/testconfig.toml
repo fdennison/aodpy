@@ -5,7 +5,7 @@ site = "jb1"
 rootpath = "./SampleData/"
 startdate = 2015-07-01 
 enddate = 2015-07-30 
-ozoneopt = true
+ozonedir = "ozone/"
 [cal]
 maketable = true
 makeplot = false
@@ -18,7 +18,7 @@ calfile_in = "12150707.lcl"
 refchannel = 500
 
 [aod2p]
-calfile_in = "12150707.500"
+calfile = "12150707.500"
 clockfix = false
 cirrusopt = 0            # 0:Don't flag; 1:flag if alpha(440/870) < 0.862 + 0.556*log10(aod440); 2:flag if aod1020 > aod870
 #filters

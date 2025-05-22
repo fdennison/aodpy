@@ -28,8 +28,8 @@ site = aod2pconf['site']
 rootpath = aod2pconf['rootpath']
 startdate = aod2pconf['startdate']
 enddate = aod2pconf['enddate']
-ozoneopt = aod2pconf['ozoneopt']
-calfile_in =  aod2pconf['aod2p']['calfile_in']
+ozonedir = aod2pconf['ozonedir']
+calfile =  aod2pconf['aod2p']['calfile']
 clockfix = aod2pconf['aod2p']['clockfix']
 cirrusopt = aod2pconf['aod2p']['cirrusopt']
 window = aod2pconf['aod2p']['window']
@@ -42,10 +42,12 @@ Uangstrom48thres = aod2pconf['aod2p']['Uangstrom48thres']
 print(f'Run aod2p for {site} from {startdate} to {enddate}')
 if args.verbose: print(aod2pconf) 
 
-ozonefile = rootpath+'ozone/'+site+'.o3'
-if os.path.isfile(ozonefile) and ozoneopt:
+ozonefile = rootpath+ozonedir+site+'.o3'
+if os.path.isfile(ozonefile):
     o3 = fr.read_bom_ozone2011(ozonefile)
+    ozoneopt = True
 else:
+    ozoneopt = False
     print('using default ozone: 250 DU')
 
 configfile = rootpath+'config/'+site+'.cfn'
@@ -57,9 +59,9 @@ inst = config.CimelNumber
 
 #cal = fr.read_cal(rootpath+'suncals/#'+calfile_in[1:-10].zfill(2)+'/'+calfile_in)
 calperiod_filename = str(inst) + str(startdate.year % 100).zfill(2) + str(startdate.month).zfill(2) + str(enddate.month).zfill(2)
-if calfile_in=='':  # leave blank for default naming convention and 500nm ref
-    calfile_in = calperiod_filename+'.500'
-cal = fr.read_cal(rootpath+'suncals/'+str(inst).zfill(2)+'/'+calfile_in)
+if len(calfile)==3:  # 
+    calfile = calperiod_filename+'.'+calfile
+cal = fr.read_cal(rootpath+'suncals/'+str(inst).zfill(2)+'/'+calfile)
 #See p 87 of 2006/7 notebook
 #This kernel has to be divided by airmass to give U(aod)
 usignal=0.003
@@ -68,10 +70,12 @@ if cal.attrs['numlangleys']>0:
 else:
     cal['stdUaod1am'] = usignal
 
-if clockfix: clk = fr.read_adj_file(rootpath + 'suncals/' + str(inst).zfill(2) +'/' + calperiod_filename + '.clk', 'timecorr')
+if clockfix: 
+    #clk = fr.read_adj_file(rootpath + 'suncals/' + str(inst).zfill(2) +'/' + calperiod_filename + '.clk', 'timecorr')
+    clk = fr.read_adj_file(rootpath + 'clockdrift/' + site + '.clk', 'timecorr')
 
 i440 = atm.wavelength[model-1].index(440)  # 1-1
-i670 = atm.wavelength[model-1].index(670)  #2 - 1
+i670 = 2-1 #atm.wavelength[model-1].index(670)  #2 - 1
 i870 = atm.wavelength[model-1].index(870)  #3 - 1
 i1020 = atm.wavelength[model-1].index(1020)#4 - 1
 iWV = atm.wavelength[model-1].index(936)   #10 - 1
@@ -122,8 +126,12 @@ for dii in datelist:
             blksun = [0] * numchannels
 
         # Clock Fix
-        if clockfix:  timecorr = round(clk.asof(dii).timecorr)
-
+        if clockfix:  
+            timecorr = clk.asof(dii).timecorr
+            if np.isnan(timecorr):
+                timecorr = round(clk.timecorr.iloc[0])   # prior to first entry in clk file
+            else:
+                timecorr = round(timecorr)
         volt = np.zeros([nobs, numchannels])
         datetime = []
         aod = np.zeros([nobs, numchannels])
@@ -351,6 +359,6 @@ for dii in datelist:
         else:
             if args.verbose: print(f'{obsdate} not enough obs passed filters')
     else:
-        print(f'{obsdate} no lsu file')
+        if args.verbose: print(f'{obsdate} no lsu file')
         
-
+print('done')

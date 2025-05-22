@@ -1,7 +1,7 @@
 import datetime as dt
 import numpy as np
 import pandas as pd
-import os as os
+import os
 import math
 import fileread_module as fr
 import solpos_module as sol
@@ -9,7 +9,7 @@ import calfit_module as fit
 import atmos_module as atm
 import tomllib
 import argparse
-#import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt        #problems getting matplotlib to work in my env
 
 pi = math.pi
 rad2deg = 180.0 / pi
@@ -29,9 +29,9 @@ site = langleyconf['site']
 rootpath = langleyconf['rootpath']
 startdate = langleyconf['startdate']
 enddate = langleyconf['enddate']
-ozoneopt = langleyconf['ozoneopt']
+ozonedir = langleyconf['ozonedir']
 langleytable = langleyconf['cal']['maketable']
-#makeplot = langleyconf['cal']['makeplot']
+makeplot = langleyconf['cal']['makeplot']
 calepoch = langleyconf['cal']['calepoch']
 fitV0 = langleyconf['cal']['fitV0']
 clockfix = langleyconf['cal']['clockfix']
@@ -51,6 +51,8 @@ numlangleychannels = numchannels - 1
 
 calperiod_filename = str(inst) + str(startdate.year % 100).zfill(2) + str(startdate.month).zfill(2) + str(enddate.month).zfill(2)
 
+if calepoch=="":  calepoch = dt.date(startdate.year,1,1)
+
 cutfile = rootpath + 'suncals/' + str(inst).zfill(2) +'/' + calperiod_filename + '.cut'
 if os.path.isfile(cutfile):
     cut = fr.read_adj_file(cutfile, 'AmPm')
@@ -60,21 +62,35 @@ else:
     print('no cut file')
 
 if clockfix:
-    clk = fr.read_adj_file(rootpath + 'suncals/' + str(inst).zfill(2) +'/' + calperiod_filename + '.clk', 'timecorr')
-
-ozonefile = rootpath+'ozone/'+site+'.o3'
-if os.path.isfile(ozonefile) and ozoneopt:
+    #clk = fr.read_adj_file(rootpath + 'suncals/' + str(inst).zfill(2) +'/' + calperiod_filename + '.clk', 'timecorr')
+    clk = fr.read_adj_file(rootpath + 'clockdrift/' + site + '.clk', 'timecorr')
+    
+ozonefile = rootpath+ozonedir+site+'.o3'
+if os.path.isfile(ozonefile):
     o3 = fr.read_bom_ozone2011(ozonefile)
+    ozoneopt = True
 else:
+    ozoneopt = False
     print('using default ozone: 250 DU')
-
+    
 if langleytable:
     ltbfile = rootpath + 'suncals/' + str(inst).zfill(2) +'/' + calperiod_filename +'.ltb'
+    os.makedirs(os.path.dirname(ltbfile), exist_ok=True)
     with open(ltbfile, 'w') as f:
         f.write('datetime CalD T P(hPa)  N '+' '.join([format(f'LV0{str(int(x)).zfill(4)}', "6s") for x in atm.wavelength[model-1]])+'\n')
 
+if model<=9:   # later models the 2nd channel is 675nm
+    lambda2 = 670
+else:
+    lambda2 = 675
+
+if model == 10:
+    ext = '.NSU'
+else:    
+    ext = '.sun'
+    
 i440 = atm.wavelength[model-1].index(440)  # 1-1
-i670 = atm.wavelength[model-1].index(670)  #2 - 1
+i670 = atm.wavelength[model-1].index(lambda2)  #2 - 1
 i870 = atm.wavelength[model-1].index(870)  #3 - 1
 i1020 = atm.wavelength[model-1].index(1020)#4 - 1
 iWV = atm.wavelength[model-1].index(936)   #10 - 1
@@ -82,8 +98,6 @@ iWV = atm.wavelength[model-1].index(936)   #10 - 1
 numlangleys=0
 dayssinceepoch=[]
 lnV0glob=[]
-p_arr=[]
-d_arr=[]
 ampm = ['Am','Pm']
 datelist = pd.date_range(startdate,enddate,freq='d')  
 
@@ -97,7 +111,7 @@ for dii in datelist:
     sunfile = rootpath+'agsdat/'+filedir+fileroot+'.sun'
     if os.path.isfile(sunfile):
         sundata = fr.read_triple_sun_record(sunfile, model)
-        if sundata.empty:
+        if sundata.empty or (sum(sundata.Valid==0)==0):  # Fortran does not have valid data check here - without it it seems to produce spurious data on days where all data is invalid
             if args.verbose: print(f'skipping {obsdate}')
             continue
         startlocalday = dt.datetime.combine(obsdate,dt.time(4,0,0)) - dt.timedelta(hours=config.attrs['TimeZone'])
@@ -140,7 +154,7 @@ for dii in datelist:
                                                             # there is no good reason to round this, so perhaps remove this in the future
                                                             # however it will substansially change output
         if np.isnan(timecorr):
-            timecorr = clk.timecorr.iloc[0]   # prior to first entry in clk file
+            timecorr = round(clk.timecorr.iloc[0])   # prior to first entry in clk file
         else:
             timecorr = round(timecorr)
   
@@ -222,10 +236,7 @@ for dii in datelist:
 
     
     MinSunTriples = 10
-    for iap in [0,1]: #  morning / afternoon
-        meanpressure = np.mean(pr[nstart[iap]:nend[iap]])
-        rayleighOD = [atm.rayleigh(wl, pk) for wl in atm.wavelength[model-1]]
-        
+    for iap in [0,1]: #  morning / afternoon        
         include=True
         # cutList
         if usecut:
@@ -266,6 +277,9 @@ for dii in datelist:
                             # correct intercept to 1 AU
                             intercept[n]=intercept[n] + 2.0*math.log(DSunEarth)
                         lnV0glob.append(intercept)
+
+                        meanpressure = np.mean(pr[nstart[iap]:nend[iap]])
+                        rayleighOD = [atm.rayleigh(wl, meanpressure) for wl in atm.wavelength[model-1]]
                         aerosolOD = -slope - rayleighOD - ozoneOD
                             
                         angstrom = np.zeros([numlangleychannels,numlangleychannels])
@@ -292,8 +306,6 @@ for dii in datelist:
                         dayssinceepoch.append(cald)    
 
                         numlangleys += 1
-                        p_arr.append(meanpressure)
-                        d_arr.append(DSunEarth)
                         if args.verbose: print(f'{obsdate} {ampm[iap]}  {npts_ap} {meanpressure:6.1f}')
                         if langleytable:
                             with open(ltbfile, 'a') as f:
@@ -347,22 +359,21 @@ if numlangleys>0:
         
     calfile.close()
 
+if makeplot:
+    fig, ax = plt.subplots(figsize=(12,9))
+    for n in range(numchannels):
+        p = ax.plot(dayssinceepoch,lnV0glob[:,n],'.')
+        linfit = np.polyval([lnV0coef1[n], lnV0coef0[n]], dayssinceepoch)
+        col = p[-1].get_color()
+        ax.plot(dayssinceepoch, linfit, color=col, label=atm.wavelength[model-1][n])
+    ax.set_ylabel(r'lnV$_0$')
+    ax.set_xlabel('days since epoch')
+    ax.set_title(calperiod_filename+'.lcl')
+    plt.legend()
+    figfile = rootpath+'suncals/'+str(inst).zfill(2)+'/'+calperiod_filename+'.lcl.ps'
+    plt.savefig(figfile,bbox_inches='tight')
+    print(f'Figure written to: {figfile}, check for outliers')
 
-#if makeplot:
-#    fig, ax = plt.subplots(figsize=(12,9))
-#    for n in range(numchannels):
-#        p = ax.plot(dayssinceepoch,lnV0glob[:,n],'.')
-#        linfit = np.polyval([lnV0coef1[n], lnV0coef0[n]], dayssinceepoch)
-#        col = p[-1].get_color()
-#        ax.plot(dayssinceepoch, linfit, color=col, label=atm.wavelength[model-1][n])
-
-#    ax.set_ylabel(r'lnV$_0$')
-#    ax.set_xlabel('days since epoch')
-#    ax.set_title(calperiod_filename+'.lcl')
-#    plt.legend()
-#    figfile = rootpath+'suncals/'+str(inst).zfill(2)+'/'+calperiod_filename+'.lcl.ps'
-#    plt.savefig(figfile,bbox_inches='tight')
-#    print(f'Figure written to: {figfile}, check for outliers')
 if langleytable:
     print(f'Langley table written to: {ltbfile}')
 print(f'Langley calibration file written to: {langleyfile}')    
