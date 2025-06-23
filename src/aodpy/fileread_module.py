@@ -57,14 +57,14 @@ def read_all_triple_sun_records(rootpath,site,startdate,enddate,inst,model):
     t_low_end = s_all['Temperature'] > c.mintemp 
     t_high_end = s_all['Temperature'] < c.maxtemp
     low_end = (s_all.loc[:,s_all.columns.str.contains('ch*')]>c.minsignal).all(axis=1)
-    high_end = (s_all.loc[:,s_all.columns.str.contains('ch*')]>c.maxsignal).all(axis=1)
+    high_end = (s_all.loc[:,s_all.columns.str.contains('ch*')]<c.maxsignal).all(axis=1)
     
     # adjust 1020nm channel for temperature dependence
     for k in range(3):
         s_all[f'ch1020_{k}'] = [adjust1020(x,y) for x,y in zip(s_all[f'ch1020_{k}'],s_all['Temperature'])]
         
     s_all
-    s = s_all[low_end & t_low_end & t_high_end, high_end] #   New inst. has much larger values - so high end filter needs to be adjusted
+    s = s_all[low_end & t_low_end & t_high_end & high_end] #   New inst. has much larger values - so high end filter needs to be adjusted
 
     return s
 

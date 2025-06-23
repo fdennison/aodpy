@@ -282,12 +282,13 @@ for dii in datelist:
 
 print(f'{numlangleys} langleys in this time period')
 
-lnV0glob = np.vstack(lnV0glob)
-lnV0coef0 = np.zeros(numchannels)
-lnV0coef1 = np.zeros(numchannels)
-erms = np.zeros(numchannels)
-
 if numlangleys>0:
+
+    lnV0glob = np.vstack(lnV0glob)
+    lnV0coef0 = np.zeros(numchannels)
+    lnV0coef1 = np.zeros(numchannels)
+    erms = np.zeros(numchannels)
+
     if numlangleys>=2 & fitV0 :
         Iorder = 1
         weight = [1] * numlangleys
@@ -318,24 +319,23 @@ if numlangleys>0:
                f' {erms[N]:13.5e}\n')        
     calfile.close()
 
-print(f'Langley calibration file written to: {langleyfile}')    
+    print(f'Langley calibration file written to: {langleyfile}')    
 
-if makeplot:
-    fig, ax = plt.subplots(figsize=(12,9))
-    for n in [i500, i670, i870]: #range(numchannels):
-        p = ax.plot(dayssinceepoch,lnV0glob[:,n],'.')
-        if fitV0:
-            linfit = np.polyval([lnV0coef1[n], lnV0coef0[n]], dayssinceepoch)
-            col = p[-1].get_color()
-            ax.plot(dayssinceepoch, linfit, color=col, label=c.wavelength[model-1][n])
-    ax.set_ylabel(r'lnV$_0$')
-    ax.set_xlabel('days since epoch')
-    ax.set_title(calperiod_filename+'.lcl')
-    plt.legend()
-    figfile = rootpath+'suncals/'+str(inst).zfill(2)+'/'+calperiod_filename+'.lcl.ps'
-    plt.savefig(figfile,bbox_inches='tight')
-    print(f'Figure written to: {figfile}, check for outliers')
+    if makeplot:
+        fig, ax = plt.subplots()
+        for n in [i500, i670, i870]: #range(numchannels):
+            p = ax.plot(dayssinceepoch,lnV0glob[:,n],'.')
+            if fitV0:
+                linfit = np.polyval([lnV0coef1[n], lnV0coef0[n]], dayssinceepoch)
+                col = p[-1].get_color()
+                ax.plot(dayssinceepoch, linfit, color=col, label=c.wavelength[model-1][n])
+        ax.set_ylabel(r'lnV$_0$')
+        ax.set_xlabel('days since epoch')
+        ax.set_title(calperiod_filename+'.lcl')
+        plt.legend()
+        figfile = rootpath+'suncals/'+str(inst).zfill(2)+'/'+calperiod_filename+'.lcl.ps'
+        plt.savefig(figfile,bbox_inches='tight')
+        print(f'Figure written to: {figfile}, check for outliers')
 
-if langleytable:
-    print(f'Langley table written to: {ltbfile}')
-print(f'Langley calibration file written to: {langleyfile}')    
+    if langleytable:
+        print(f'Langley table written to: {ltbfile}')
