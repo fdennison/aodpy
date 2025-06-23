@@ -64,7 +64,7 @@ def read_all_triple_sun_records(rootpath,site,startdate,enddate,inst,model):
         s_all[f'ch1020_{k}'] = [adjust1020(x,y) for x,y in zip(s_all[f'ch1020_{k}'],s_all['Temperature'])]
         
     s_all
-    s = s_all[low_end & t_low_end & t_high_end] # #   & high_end   New inst. has much larger values - so high end filter needs to be adjusted
+    s = s_all[low_end & t_low_end & t_high_end, high_end] #   New inst. has much larger values - so high end filter needs to be adjusted
 
     return s
 

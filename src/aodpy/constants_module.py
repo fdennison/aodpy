@@ -11,7 +11,7 @@ earthrad = 6370.0 #km
 gravity = 9.80665  # ms^{-2}, standard value
 
 minsignal=50
-maxsignal=65000
+maxsignal=200000   #65000
 mintemp=-10.0
 maxtemp=60.0 
 
