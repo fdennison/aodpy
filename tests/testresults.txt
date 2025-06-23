@@ -1,0 +1,6 @@
+Only in CorrectOutput: SampleData
+Only in SampleData: output
+Files SampleData/suncals/12/12150707.500 and CorrectOutput/suncals/12/12150707.500 differ
+Files SampleData/suncals/12/12150707.lcl and CorrectOutput/suncals/12/12150707.lcl differ
+Files SampleData/suncals/12/12150707.ltb and CorrectOutput/suncals/12/12150707.ltb differ
+Only in SampleData/suncals/12: 12150707.ltb_test

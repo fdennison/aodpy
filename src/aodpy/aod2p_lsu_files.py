@@ -118,7 +118,7 @@ for dii in datelist:
             ozonecolumn = 0.25
     
         # Pressure data
-        presfile = rootpath + 'PyOut/' + filedir.replace('#','')  + fileroot + '.hpa'
+        presfile = rootpath + 'output/' + filedir.replace('#','')  + fileroot + '.hpa'
         p = fr.read_pressure_file(args.verbose, presfile)    
     
         # photometer data
@@ -346,9 +346,9 @@ for dii in datelist:
                 out = " ".join([format(x, "6.4f") for x in np.mean(aod[filt2==1,:numlangch], axis=0)])
                 if args.verbose: print(f'{obsdate}, '+out)
                 if cirrusopt>0:
-                    aodfile = rootpath+'PyOut/'+site+'/' + str(inst) + str(obsdate.year % 100).zfill(2) + str(obsdate.month).zfill(2) + str(obsdate.day).zfill(2) +'.aod_lsu'+str(cirrusopt)
+                    aodfile = rootpath+'output/'+site+'/' + str(inst) + str(obsdate.year % 100).zfill(2) + str(obsdate.month).zfill(2) + str(obsdate.day).zfill(2) +'.aod_lsu'+str(cirrusopt)
                 else:
-                    aodfile = rootpath+'PyOut/'+site+'/' + str(inst) + str(obsdate.year % 100).zfill(2) + str(obsdate.month).zfill(2) + str(obsdate.day).zfill(2) +'.aod_lsu'
+                    aodfile = rootpath+'output/'+site+'/' + str(inst) + str(obsdate.year % 100).zfill(2) + str(obsdate.month).zfill(2) + str(obsdate.day).zfill(2) +'.aod_lsu'
                 os.makedirs(os.path.dirname(aodfile), exist_ok=True) 
                 with open(aodfile, 'w') as f:
                     f.write('date       time    sunzen airmass '+

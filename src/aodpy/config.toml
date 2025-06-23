@@ -3,30 +3,29 @@
 #general
 site = "jb1"
 rootpath = "/home/599/fd0474/AODcode/SampleData/"
-startdate = 2018-11-26
-enddate = 2019-11-26
-ozonedir = "ozone/new/"        #string with ozone subdir within rootpath: use [site].o3 file; empty: use default 250 DU
+startdate = 2024-11-26
+enddate = 2025-05-26
+ozonedir = "ozone/new/"         #use [site].o3 file in rootpath/ozonedir; if no o3 file, use default 250 DU
 
 [cal]  #langley and gencal
-maketable = true
-makeplot = false
-calepoch = ""                  #if empty uses Jan 1 of start year
-fitV0 = true
-clockfix = true
-MaxSdevFit = 0.005       #Max sd of fit for regression (normally 0.005)
+makeplot = true
+maketable = true         # output .ltb file 
+calepoch = ""            # if empty default to 1 Jan on the year of startdate
+fitV0 = true             # true: a linear fit of V0 as a function of time; if false: a mean V0 over the timespan
+clockfix = false         # if true use .clk file in rootpath/suncals/{inst no.}/
+MaxSdevFit = 0.005       # Max sd of fit for regression (normally 0.005)
+calfile_in = '670'       # either just the extention e.g. "lcl", "870" or the full file name e.g. "21241105.lcl"
+refchannel = 500         # e.g. 870, 670, 500
 UseRefChannel4QA = true  # Use reference channel for regression QA?(F:870nm)
-calfile_in = "lcl"
-refchannel = 500
 
 [aod2p]
-calfile = "500"
-clockfix = true
-cirrusopt = 1            # 0:Don't flag; 1:flag if alpha(440/870) < 0.862 + 0.556*log10(aod440); 2:flag if aod1020 > aod870
-#filters
-window = 2               # minutes
+calfile = "500"          # either just the extion e.g. "lcl", "500" or the full file name e.g. "21241105.500"
+clockfix = false         # if true use .clk file in rootpath/suncals/{inst no.}/
+cirrusopt = 1            # 0:Don't flag; 1:flag if angstrom(440/870) < 0.862 + 0.556*log10(aod440); 2:flag if aod1020 > aod870
+#filters              
 CVmax = 0.01
 solzenmax = 80.0
 minobs = 8
-sd_crit = 0.01
 relUaod440thres = 0.5
 Uangstrom48thres = 0.4
+

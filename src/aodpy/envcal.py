@@ -16,7 +16,7 @@ parser.add_argument('-b', '--batch', dest='batch', action='store_true',
 parser.add_argument('-v', '--verbose',action='store_true')
 args=parser.parse_args()
 
-# langley config options
+# config options
 with open(args.configtoml, "rb") as f:
     envconf = tomllib.load(f)
 site = envconf['site']
@@ -26,7 +26,7 @@ enddate = envconf['enddate']
 print(f'Run env for {site} from {startdate} to {enddate}')
 if args.verbose: print(envconf)
 
-#Logger clock error (+ve for slow) 
+# Logger clock error (+ve for slow) 
 ce=dt.timedelta(hours=0,minutes=0,seconds=0)
 
 configfile = rootpath+'config/'+site+'.cfn'
@@ -95,7 +95,7 @@ else:
 datelist = pd.date_range(startdate,enddate,freq='d')  
 
 inrootpath = rootpath + 'agsdat/' + site + '/#' + str(inst).zfill(2) + '/' 
-outrootpath = rootpath + 'PyOut/' + site + '/' + str(inst).zfill(2) + '/' 
+outrootpath = rootpath + 'output/' + site + '/' + str(inst).zfill(2) + '/' 
 
 for dii in datelist:
     obsdate = pd.to_datetime(dii).date()

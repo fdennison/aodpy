@@ -1,0 +1,32 @@
+# config file for envcal, langley, gencal, aod2py
+
+#general
+site = "jb1"
+rootpath = "/home/599/fd0474/AODcode/SampleData/"
+startdate = 2015-06-02
+enddate = 2016-06-13
+ozoneopt = false         #true: use [site].o3 file; false: use default 250 DU
+
+[cal]  #langley and gencal
+maketable = true
+makeplot = true
+calepoch = 2015-01-01 
+fitV0 = true
+clockfix = true
+MaxSdevFit = 0.005       #Max sd of fit for regression (normally 0.005)
+UseRefChannel4QA = true  # Use reference channel for regression QA?(F:870nm)
+calfile_in = "lcl"
+refchannel = 500
+
+[aod2p]
+calfile_in = "500"
+clockfix = true
+cirrusopt = 0            # 0:Don't flag; 1:flag if alpha(440/870) < 0.862 + 0.556*log10(aod440); 2:flag if aod1020 > aod870
+#filters
+window = 2               # minutes
+CVmax = 0.01
+solzenmax = 80.0
+minobs = 8
+sd_crit = 0.01
+relUaod440thres = 0.5
+Uangstrom48thres = 0.4
