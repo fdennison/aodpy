@@ -36,14 +36,17 @@ def read_all_triple_sun_records(rootpath,site,startdate,enddate,inst,model):
         if not os.path.isfile(sunfile):   
             print(f"{sunfile.rsplit('/', 1)[-1]} not present")
         else:
-            tempdf = pd.read_csv(sunfile, header=None).drop_duplicates()
-            if len(tempdf.columns) != (numchannels*3+3):
-                print(f'{filename} has unexpected number of channels,  has:{len(s.columns)} expect:{numchannels*3+3}')
-            else:
-                tempdf[0] = pd.to_datetime(tempdf[0], format=dateformat)
-                tempdf['DateTime'] = pd.to_datetime(tempdf[0], format=dateformat)+pd.to_timedelta(tempdf[1])
-                tempdf = tempdf.set_index('DateTime')
-                s_all.append(tempdf)
+            try:
+                tempdf = pd.read_csv(sunfile, header=None).drop_duplicates()
+                if len(tempdf.columns) != (numchannels*3+3):
+                    print(f'{filename} has unexpected number of channels,  has:{len(s.columns)} expect:{numchannels*3+3}')
+                else:
+                    tempdf[0] = pd.to_datetime(tempdf[0], format=dateformat)
+                    tempdf['DateTime'] = pd.to_datetime(tempdf[0], format=dateformat)+pd.to_timedelta(tempdf[1])
+                    tempdf = tempdf.set_index('DateTime')
+                    s_all.append(tempdf)
+            except:
+                print(f'problem with {sunfile}')
                 
     s_all = pd.concat(s_all).drop_duplicates()            
     if not s_all.index.is_monotonic_increasing:

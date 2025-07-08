@@ -138,7 +138,7 @@ for dii in datelist:
         blkfile = rootpath+'agsdat/'+filedir+fileroot+'.blk'
         if os.path.isfile(blkfile):
             if verb: print(f'blackfile : {blkfile}')
-            blksun = read_black_record(blkfile,model)
+            blksun = fr.read_black_record(blkfile,model)
         else:
             blksun = [0] * numchannels
 
